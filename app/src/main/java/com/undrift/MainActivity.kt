@@ -4,12 +4,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import com.undrift.ui.screens.OnboardingAgentsScreen
-import com.undrift.ui.screens.SplashScreen
+import androidx.compose.runtime.*
+import com.undrift.ui.screens.*
 import com.undrift.ui.theme.UnDriftTheme
 
 class MainActivity : ComponentActivity() {
@@ -22,7 +18,19 @@ class MainActivity : ComponentActivity() {
 
                 when (currentScreen) {
                     "splash" -> SplashScreen(onGetStarted = { currentScreen = "onboarding" })
-                    "onboarding" -> OnboardingAgentsScreen(onGetStarted = { /* TODO: Navigate to Home */ })
+                    "onboarding" -> OnboardingAgentsScreen(onGetStarted = { currentScreen = "dashboard" })
+                    "dashboard" -> DashboardScreen(
+                        onProfileClick = { currentScreen = "profile" },
+                        onAddClick = { currentScreen = "app_block" },
+                        onRewardsClick = { currentScreen = "rewards" }
+                    )
+                    "profile" -> ProfileScreen(onBack = { currentScreen = "dashboard" })
+                    "app_block" -> AppBlockScreen(onBack = { currentScreen = "dashboard" })
+                    "rewards" -> RewardsShopScreen(onBack = { currentScreen = "dashboard" })
+                    "nudge" -> FocusNudgeScreen(
+                        onBackToFocus = { currentScreen = "dashboard" },
+                        onNeedTime = { currentScreen = "rewards" }
+                    )
                 }
             }
         }
