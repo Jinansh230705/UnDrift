@@ -1,6 +1,8 @@
 package com.undrift.ui.theme
 
 import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
@@ -35,9 +37,12 @@ fun UnDriftTheme(
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
-            val window = (view.context as Activity).window
-            window.statusBarColor = colorScheme.background.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
+            val activity = view.context.findActivity()
+            if (activity != null) {
+                val window = activity.window
+                window.statusBarColor = colorScheme.background.toArgb()
+                WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
+            }
         }
     }
 
@@ -47,3 +52,10 @@ fun UnDriftTheme(
         content = content
     )
 }
+
+private tailrec fun Context.findActivity(): Activity? =
+    when (this) {
+        is Activity -> this
+        is ContextWrapper -> baseContext.findActivity()
+        else -> null
+    }

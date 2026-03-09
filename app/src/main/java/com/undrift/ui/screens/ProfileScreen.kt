@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.undrift.ui.theme.Orange
 import com.undrift.ui.theme.SurfaceColor
 import com.undrift.ui.theme.TextSecondary
 
@@ -97,7 +98,7 @@ fun ProfileScreen(onBack: () -> Unit) {
                 modifier = Modifier.padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Icon(Icons.Default.LocalFireDepartment, contentDescription = null, tint = Color.Orange, modifier = Modifier.size(32.dp))
+                Icon(Icons.Default.LocalFireDepartment, contentDescription = null, tint = Orange, modifier = Modifier.size(32.dp))
                 Text(
                     text = "12 Day Streak!",
                     style = MaterialTheme.typography.headlineMedium,
