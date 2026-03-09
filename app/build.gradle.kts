@@ -37,6 +37,12 @@ android {
     buildFeatures {
         compose = true
     }
+    packaging {
+        resources {
+            excludes += "/META-INF/native-image/native-image.properties"
+            excludes += "/META-INF/native-image/reflect-config.json"
+        }
+    }
 }
 
 dependencies {
@@ -49,6 +55,8 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)
+    implementation(libs.androidx.datastore.preferences)
+    implementation(libs.mongodb.driver.kotlin.coroutine)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

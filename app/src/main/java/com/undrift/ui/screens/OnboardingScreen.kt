@@ -24,7 +24,7 @@ import androidx.compose.ui.unit.sp
 import com.undrift.ui.theme.UnDriftTheme
 
 @Composable
-fun SplashScreen(onGetStarted: () -> Unit) {
+fun SplashScreen(onGetStarted: () -> Unit, onSignInClick: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -132,7 +132,7 @@ fun SplashScreen(onGetStarted: () -> Unit) {
                 }
             }
 
-            TextButton(onClick = { }) {
+            TextButton(onClick = onSignInClick) {
                 Text("Sign In", color = Color.White)
             }
         }
@@ -282,7 +282,7 @@ fun AgentItem(icon: ImageVector, title: String, description: String) {
 @Composable
 fun SplashScreenPreview() {
     UnDriftTheme {
-        SplashScreen {}
+        SplashScreen({}, {})
     }
 }
 

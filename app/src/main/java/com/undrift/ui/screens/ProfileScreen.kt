@@ -8,8 +8,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -26,7 +31,11 @@ import com.undrift.ui.theme.SurfaceColor
 import com.undrift.ui.theme.TextSecondary
 
 @Composable
-fun ProfileScreen(onBack: () -> Unit) {
+fun ProfileScreen(
+    userName: String,
+    onBack: () -> Unit,
+    onLogout: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -41,7 +50,7 @@ fun ProfileScreen(onBack: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White)
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Back", tint = Color.White)
             }
             Text(
                 text = "Profile",
@@ -69,7 +78,7 @@ fun ProfileScreen(onBack: () -> Unit) {
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Akshay",
+                text = userName.ifEmpty { "User" },
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
@@ -190,7 +199,7 @@ fun ProfileScreen(onBack: () -> Unit) {
         
         Text(
             text = "Log Out",
-            modifier = Modifier.fillMaxWidth().clickable { },
+            modifier = Modifier.fillMaxWidth().clickable { onLogout() },
             textAlign = TextAlign.Center,
             color = Color.Red.copy(alpha = 0.7f),
             fontWeight = FontWeight.Bold
