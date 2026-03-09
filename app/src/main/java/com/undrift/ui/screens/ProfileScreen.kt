@@ -1,6 +1,7 @@
 package com.undrift.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -16,7 +17,7 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -26,13 +27,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.undrift.data.UserProfile
 import com.undrift.ui.theme.Orange
 import com.undrift.ui.theme.SurfaceColor
 import com.undrift.ui.theme.TextSecondary
+import java.util.Calendar
+import java.util.Locale
 
 @Composable
 fun ProfileScreen(
-    userName: String,
+    userProfile: UserProfile,
     onBack: () -> Unit,
     onLogout: () -> Unit
 ) {
@@ -74,105 +78,56 @@ fun ProfileScreen(
                 modifier = Modifier
                     .size(100.dp)
                     .clip(CircleShape)
-                    .background(Color.Gray)
-            )
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = if (userProfile.name.isNotEmpty()) userProfile.name.take(1).uppercase() else "U",
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold
+                )
+            }
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = userName.ifEmpty { "User" },
+                text = userProfile.name.ifEmpty { "User" },
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
             )
             Text(
-                text = "Focus Level: Pro Elite",
+                text = "Focus Level: Pro ${userProfile.streakCount / 5 + 1}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary
-            )
-            Text(
-                text = "Member since January 2024",
-                style = MaterialTheme.typography.labelSmall,
-                color = TextSecondary
             )
         }
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // Streak Card
+        // Streak & Calendar Card
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = SurfaceColor),
             shape = RoundedCornerShape(24.dp)
         ) {
             Column(
-                modifier = Modifier.padding(24.dp),
+                modifier = Modifier.padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Icon(Icons.Default.LocalFireDepartment, contentDescription = null, tint = Orange, modifier = Modifier.size(32.dp))
-                Text(
-                    text = "12 Day Streak!",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = Color.White
-                )
-                Text(
-                    text = "Keep it up! Your AI agent is impressed.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary,
-                    textAlign = TextAlign.Center
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(32.dp))
-
-        // Focus Heatmap Placeholder
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("Focus Heatmap", style = MaterialTheme.typography.titleMedium, color = Color.White)
-            Text("October 2023", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
-        }
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        // Heatmap Calendar Grid (Mock)
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = SurfaceColor),
-            shape = RoundedCornerShape(24.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                // Days of week
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    listOf("S", "M", "T", "W", "T", "F", "S").forEach { day ->
-                        Text(day, style = MaterialTheme.typography.labelSmall, color = TextSecondary, modifier = Modifier.width(32.dp), textAlign = TextAlign.Center)
-                    }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.LocalFireDepartment, contentDescription = null, tint = Orange, modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "${userProfile.streakCount} Day Streak",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
                 }
-                Spacer(modifier = Modifier.height(8.dp))
-                // Just a mock grid
-                repeat(5) { rowIndex ->
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        repeat(7) { colIndex ->
-                            val isActive = (rowIndex * 7 + colIndex) % 3 == 0
-                            Box(
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .clip(CircleShape)
-                                    .background(if (isActive) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.2f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "${(rowIndex * 7 + colIndex + 1) % 31 + 1}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (isActive) Color.White else TextSecondary
-                                )
-                            }
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
+                
+                Spacer(modifier = Modifier.height(20.dp))
+                
+                StreakCalendar(streakCount = userProfile.streakCount)
             }
         }
 
@@ -182,8 +137,9 @@ fun ProfileScreen(
         Text("Weekly Summary", style = MaterialTheme.typography.titleMedium, color = Color.White)
         Spacer(modifier = Modifier.height(16.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            SummaryItem(modifier = Modifier.weight(1f), label = "TOTAL FOCUS", value = "42.5h", trend = "~ 12% vs last week")
-            SummaryItem(modifier = Modifier.weight(1f), label = "AI EFFICIENCY", value = "94%", trend = "Peak performance")
+            val totalMins = userProfile.streakHistory.sum()
+            SummaryItem(modifier = Modifier.weight(1f), label = "TOTAL FOCUS", value = "${totalMins / 60}h ${totalMins % 60}m", trend = "This week")
+            SummaryItem(modifier = Modifier.weight(1f), label = "BALANCE", value = "${userProfile.points}", trend = "Focus Coins")
         }
 
         Spacer(modifier = Modifier.height(32.dp))
@@ -191,9 +147,9 @@ fun ProfileScreen(
         // Preferences
         Text("Preferences", style = MaterialTheme.typography.titleMedium, color = Color.White)
         Spacer(modifier = Modifier.height(16.dp))
-        PreferenceItem(icon = Icons.Default.SmartToy, title = "AI Agent Settings", subtitle = "Currently: Motivator Mode")
+        PreferenceItem(icon = Icons.Default.SmartToy, title = "AI Agent Settings", subtitle = "Focus on performance")
         PreferenceItem(icon = Icons.Default.Notifications, title = "Notifications", subtitle = "Smart reminders enabled", showSwitch = true)
-        PreferenceItem(icon = Icons.Default.EmojiEvents, title = "Rewards Program", subtitle = "2,450 points available")
+        PreferenceItem(icon = Icons.Default.EmojiEvents, title = "Rewards Program", subtitle = "${userProfile.points} points available")
 
         Spacer(modifier = Modifier.height(32.dp))
         
@@ -206,6 +162,105 @@ fun ProfileScreen(
         )
         
         Spacer(modifier = Modifier.height(100.dp))
+    }
+}
+
+@Composable
+fun StreakCalendar(streakCount: Int) {
+    val calendar = Calendar.getInstance()
+    val currentMonthName = calendar.getDisplayName(Calendar.MONTH, Calendar.LONG, Locale.getDefault())
+    val currentYear = calendar.get(Calendar.YEAR)
+    val today = calendar.get(Calendar.DAY_OF_MONTH)
+    
+    // Calculate first day of week and days in month
+    val firstDayOfMonth = calendar.clone() as Calendar
+    firstDayOfMonth.set(Calendar.DAY_OF_MONTH, 1)
+    val firstDayOfWeek = firstDayOfMonth.get(Calendar.DAY_OF_WEEK) - 1 // 0 for Sunday
+    val daysInMonth = calendar.getActualMaximum(Calendar.DAY_OF_MONTH)
+
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = currentMonthName ?: "Month",
+                style = MaterialTheme.typography.titleSmall,
+                color = Color.White,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = currentYear.toString(),
+                style = MaterialTheme.typography.labelMedium,
+                color = TextSecondary
+            )
+        }
+        
+        Spacer(modifier = Modifier.height(12.dp))
+        
+        // Day Labels
+        Row(modifier = Modifier.fillMaxWidth()) {
+            listOf("S", "M", "T", "W", "T", "F", "S").forEach { day ->
+                Text(
+                    text = day,
+                    modifier = Modifier.weight(1f),
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextSecondary
+                )
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        // Grid of Days
+        val rows = (daysInMonth + firstDayOfWeek + 6) / 7
+        for (row in 0 until rows) {
+            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                for (col in 0 until 7) {
+                    val cellIndex = row * 7 + col
+                    val dayNum = cellIndex - firstDayOfWeek + 1
+                    
+                    Box(
+                        modifier = Modifier.weight(1f).aspectRatio(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (dayNum in 1..daysInMonth) {
+                            val isToday = dayNum == today
+                            // Logic: If day is today or within the last 'streakCount' days, mark it as success
+                            val isStreakDay = dayNum <= today && dayNum > (today - streakCount)
+                            
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        when {
+                                            isStreakDay -> MaterialTheme.colorScheme.primary
+                                            isToday -> Color.White.copy(alpha = 0.1f)
+                                            else -> Color.Transparent
+                                        }
+                                    )
+                                    .border(
+                                        width = if (isToday) 1.dp else 0.dp,
+                                        color = if (isToday) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                        shape = CircleShape
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = dayNum.toString(),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = if (isStreakDay) Color.White else if (isToday) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.6f),
+                                    fontWeight = if (isToday || isStreakDay) FontWeight.Bold else FontWeight.Normal
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

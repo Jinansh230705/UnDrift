@@ -1,5 +1,6 @@
 package com.undrift.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -11,21 +12,41 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.undrift.data.MongoRepository
+import com.undrift.data.UserPreferences
+import com.undrift.data.UserProfile
 import com.undrift.ui.theme.SurfaceColor
 import com.undrift.ui.theme.TextSecondary
+import kotlinx.coroutines.launch
+import java.util.*
+import java.util.concurrent.TimeUnit
 
 @Composable
-fun RewardsShopScreen(onBack: () -> Unit) {
+fun RewardsShopScreen(
+    onBack: () -> Unit,
+    userProfile: UserProfile,
+    userPreferences: UserPreferences,
+    mongoRepository: MongoRepository
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    
+    val canPurchaseExtraTime = remember(userProfile.lastExtraTimePurchaseDate) {
+        val threeDaysInMillis = TimeUnit.DAYS.toMillis(3)
+        System.currentTimeMillis() - userProfile.lastExtraTimePurchaseDate >= threeDaysInMillis
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -66,7 +87,7 @@ fun RewardsShopScreen(onBack: () -> Unit) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text(
-                        "1,250",
+                        "${userProfile.points}",
                         style = MaterialTheme.typography.headlineLarge,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
@@ -121,9 +142,13 @@ fun RewardsShopScreen(onBack: () -> Unit) {
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(14.dp), tint = TextSecondary)
+                        Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(14.dp), tint = if (canPurchaseExtraTime) TextSecondary else Color.Red)
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Available once every 3 days", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                        Text(
+                            if (canPurchaseExtraTime) "Available once every 3 days" else "Available again in ${getRemainingTime(userProfile.lastExtraTimePurchaseDate)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (canPurchaseExtraTime) TextSecondary else Color.Red
+                        )
                     }
                     Spacer(modifier = Modifier.height(20.dp))
                     Row(
@@ -134,10 +159,26 @@ fun RewardsShopScreen(onBack: () -> Unit) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.MonetizationOn, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("500", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White)
+                            Text("600", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White)
                         }
                         Button(
-                            onClick = { },
+                            onClick = {
+                                if (userProfile.points >= 600 && canPurchaseExtraTime) {
+                                    scope.launch {
+                                        userPreferences.recordExtraTimePurchase()
+                                        mongoRepository.saveUserToMongo(userProfile.copy(
+                                            points = userProfile.points - 600,
+                                            lastExtraTimePurchaseDate = System.currentTimeMillis()
+                                        ))
+                                        Toast.makeText(context, "Purchase successful!", Toast.LENGTH_SHORT).show()
+                                    }
+                                } else if (userProfile.points < 600) {
+                                    Toast.makeText(context, "Insufficient points!", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "Wait 3 days between purchases!", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            enabled = canPurchaseExtraTime && userProfile.points >= 600,
                             shape = RoundedCornerShape(12.dp),
                             contentPadding = PaddingValues(horizontal = 32.dp, vertical = 12.dp)
                         ) {
@@ -169,6 +210,16 @@ fun RewardsShopScreen(onBack: () -> Unit) {
             Spacer(modifier = Modifier.height(100.dp))
         }
     }
+}
+
+fun getRemainingTime(lastPurchaseDate: Long): String {
+    val threeDaysInMillis = TimeUnit.DAYS.toMillis(3)
+    val remainingMillis = threeDaysInMillis - (System.currentTimeMillis() - lastPurchaseDate)
+    if (remainingMillis <= 0) return "now"
+    
+    val days = TimeUnit.MILLISECONDS.toDays(remainingMillis)
+    val hours = TimeUnit.MILLISECONDS.toHours(remainingMillis) % 24
+    return "${days}d ${hours}h"
 }
 
 @Composable

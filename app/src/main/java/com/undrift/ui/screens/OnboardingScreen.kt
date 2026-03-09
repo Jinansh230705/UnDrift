@@ -86,29 +86,21 @@ fun SplashScreen(onGetStarted: () -> Unit, onSignInClick: () -> Unit) {
 
             Spacer(modifier = Modifier.height(48.dp))
 
-            // Loading state
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "Initializing Focus Agent",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.secondary
-                    )
-                    Text(
-                        text = "65%",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
+            // Loading state - Now with moving animation
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "Initializing Focus Agents...",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
                 LinearProgressIndicator(
-                    progress = { 0.65f },
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(8.dp)
+                        .fillMaxWidth(0.8f)
+                        .height(6.dp)
                         .clip(CircleShape),
                     color = MaterialTheme.colorScheme.primary,
                     trackColor = MaterialTheme.colorScheme.surface
@@ -275,21 +267,5 @@ fun AgentItem(icon: ImageVector, title: String, description: String) {
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.secondary
         )
-    }
-}
-
-@Preview(showBackground = true, backgroundColor = 0xFF0B101F)
-@Composable
-fun SplashScreenPreview() {
-    UnDriftTheme {
-        SplashScreen({}, {})
-    }
-}
-
-@Preview(showBackground = true, backgroundColor = 0xFF0B101F)
-@Composable
-fun OnboardingAgentsScreenPreview() {
-    UnDriftTheme {
-        OnboardingAgentsScreen {}
     }
 }

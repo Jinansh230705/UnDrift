@@ -1,17 +1,22 @@
 package com.undrift.ui.screens
 
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Numbers
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,24 +25,31 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.undrift.data.MongoRepository
+import com.undrift.data.UserPreferences
 import com.undrift.data.UserProfile
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @Composable
 fun AuthScreen(
     onAuthSuccess: (UserProfile) -> Unit,
-    onBack: () -> Unit,
-    mongoRepository: MongoRepository
+    mongoRepository: MongoRepository,
+    userPreferences: UserPreferences
 ) {
     var isSignUp by remember { mutableStateOf(true) }
     var name by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
     var age by remember { mutableStateOf("") }
     var goal by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
+    var passwordVisible by remember { mutableStateOf(false) }
     
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -73,6 +85,33 @@ fun AuthScreen(
         }
 
         AuthTextField(value = email, onValueChange = { email = it }, label = "Email Address", icon = Icons.Default.Email)
+        Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedTextField(
+            value = password,
+            onValueChange = { password = it },
+            label = { Text("Password") },
+            leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+            trailingIcon = {
+                val image = if (passwordVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff
+                IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                    Icon(imageVector = image, contentDescription = null)
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            colors = OutlinedTextFieldDefaults.colors(
+                unfocusedBorderColor = MaterialTheme.colorScheme.surface,
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedLabelColor = MaterialTheme.colorScheme.secondary,
+                focusedLabelColor = MaterialTheme.colorScheme.primary,
+                unfocusedTextColor = Color.White,
+                focusedTextColor = Color.White
+            ),
+            singleLine = true
+        )
         
         if (isSignUp) {
             Spacer(modifier = Modifier.height(16.dp))
@@ -85,23 +124,72 @@ fun AuthScreen(
 
         Button(
             onClick = {
-                if (email.isNotEmpty()) {
+                if (email.isNotEmpty() && password.isNotEmpty()) {
                     isLoading = true
                     scope.launch {
                         if (isSignUp) {
-                            val profile = UserProfile(name, email, age, goal, true)
-                            onAuthSuccess(profile)
-                        } else {
-                            // Login: Try to find user in MongoDB
-                            val existingUser = mongoRepository.findUserByEmail(email)
-                            if (existingUser != null) {
-                                onAuthSuccess(existingUser)
-                            } else {
+                            if (name.isEmpty()) {
+                                Toast.makeText(context, "Please enter your name", Toast.LENGTH_SHORT).show()
                                 isLoading = false
-                                Toast.makeText(context, "User not found. Please sign up.", Toast.LENGTH_SHORT).show()
+                                return@launch
+                            }
+                            val profile = UserProfile(name, email, password, age, goal, true)
+                            
+                            // Try Mongo First
+                            try {
+                                val success = mongoRepository.saveUserToMongo(profile)
+                                if (success) {
+                                    Log.d("AuthScreen", "Signup success with Mongo")
+                                    onAuthSuccess(profile)
+                                } else {
+                                    // Fallback to local
+                                    Log.w("AuthScreen", "Mongo signup failed, falling back to local")
+                                    Toast.makeText(context, "signing in with v2", Toast.LENGTH_SHORT).show()
+                                    onAuthSuccess(profile)
+                                }
+                            } catch (e: Exception) {
+                                Log.e("AuthScreen", "Mongo Exception, falling back to local", e)
+                                Toast.makeText(context, "signing in with v2", Toast.LENGTH_SHORT).show()
+                                onAuthSuccess(profile)
+                            }
+                        } else {
+                            // Login: Try Mongo First
+                            try {
+                                val userDoc = mongoRepository.findUserByEmail(email)
+                                if (userDoc != null) {
+                                    val dbPassword = userDoc.getString("password")
+                                    if (dbPassword == password) {
+                                        val profile = UserProfile(
+                                            name = userDoc.getString("name") ?: "",
+                                            email = userDoc.getString("email") ?: "",
+                                            password = dbPassword ?: "",
+                                            age = userDoc.getString("age") ?: "",
+                                            goal = userDoc.getString("goal") ?: "",
+                                            isLoggedIn = true
+                                        )
+                                        onAuthSuccess(profile)
+                                    } else {
+                                        isLoading = false
+                                        Toast.makeText(context, "Incorrect password.", Toast.LENGTH_SHORT).show()
+                                    }
+                                } else {
+                                    // Mongo returned nothing, check local
+                                    checkLocalLogin(email, password, userPreferences, onAuthSuccess, {
+                                        isLoading = false
+                                        Toast.makeText(context, "signing in with v2", Toast.LENGTH_SHORT).show()
+                                    })
+                                }
+                            } catch (e: Exception) {
+                                Log.e("AuthScreen", "Mongo Login error, checking local", e)
+                                checkLocalLogin(email, password, userPreferences, onAuthSuccess, {
+                                    isLoading = false
+                                    Toast.makeText(context, "signing in with v2", Toast.LENGTH_SHORT).show()
+                                })
                             }
                         }
                     }
+                } else {
+                    Toast.makeText(context, "Please fill in all fields", Toast.LENGTH_SHORT).show()
                 }
             },
             modifier = Modifier
@@ -127,10 +215,23 @@ fun AuthScreen(
                 color = MaterialTheme.colorScheme.primary
             )
         }
-        
-        TextButton(onClick = onBack) {
-            Text("Cancel", color = Color.White.copy(alpha = 0.6f))
-        }
+    }
+}
+
+private suspend fun checkLocalLogin(
+    email: String,
+    password: String,
+    userPreferences: UserPreferences,
+    onAuthSuccess: (UserProfile) -> Unit,
+    onError: (String) -> Unit
+) {
+    val localProfile = userPreferences.userProfileFlow.first()
+    if (localProfile.email == email && localProfile.password == password) {
+        onAuthSuccess(localProfile.copy(isLoggedIn = true))
+    } else if (localProfile.email == email) {
+        onError("Incorrect local password.")
+    } else {
+        onError("User not found.")
     }
 }
 
