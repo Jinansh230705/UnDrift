@@ -38,7 +38,9 @@ import java.util.Locale
 fun ProfileScreen(
     userProfile: UserProfile,
     onBack: () -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    onNavigateToAgents: () -> Unit,
+    onNavigateToShop: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -147,9 +149,29 @@ fun ProfileScreen(
         // Preferences
         Text("Preferences", style = MaterialTheme.typography.titleMedium, color = Color.White)
         Spacer(modifier = Modifier.height(16.dp))
-        PreferenceItem(icon = Icons.Default.SmartToy, title = "AI Agent Settings", subtitle = "Focus on performance")
-        PreferenceItem(icon = Icons.Default.Notifications, title = "Notifications", subtitle = "Smart reminders enabled", showSwitch = true)
-        PreferenceItem(icon = Icons.Default.EmojiEvents, title = "Rewards Program", subtitle = "${userProfile.points} points available")
+        PreferenceItem(
+            icon = Icons.Default.SmartToy, 
+            title = "AI Agent Settings", 
+            subtitle = "Focus on performance",
+            onClick = onNavigateToAgents
+        )
+        
+        var notificationsEnabled by remember { mutableStateOf(true) }
+        PreferenceItem(
+            icon = Icons.Default.Notifications, 
+            title = "Notifications", 
+            subtitle = if (notificationsEnabled) "Smart reminders enabled" else "Notifications disabled", 
+            showSwitch = true,
+            checked = notificationsEnabled,
+            onCheckedChange = { notificationsEnabled = it }
+        )
+        
+        PreferenceItem(
+            icon = Icons.Default.EmojiEvents, 
+            title = "Rewards Program", 
+            subtitle = "${userProfile.points} points available",
+            onClick = onNavigateToShop
+        )
 
         Spacer(modifier = Modifier.height(32.dp))
         
@@ -284,7 +306,10 @@ fun PreferenceItem(
     icon: ImageVector,
     title: String,
     subtitle: String,
-    showSwitch: Boolean = false
+    showSwitch: Boolean = false,
+    checked: Boolean = false,
+    onCheckedChange: (Boolean) -> Unit = {},
+    onClick: () -> Unit = {}
 ) {
     Row(
         modifier = Modifier
@@ -292,6 +317,7 @@ fun PreferenceItem(
             .padding(vertical = 8.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(SurfaceColor)
+            .clickable(enabled = !showSwitch) { onClick() }
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -310,7 +336,14 @@ fun PreferenceItem(
             Text(subtitle, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
         }
         if (showSwitch) {
-            Switch(checked = true, onCheckedChange = {})
+            Switch(
+                checked = checked, 
+                onCheckedChange = onCheckedChange,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = MaterialTheme.colorScheme.primary,
+                    checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                )
+            )
         } else {
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = TextSecondary)
         }

@@ -25,7 +25,8 @@ data class UserProfile(
     val lastExtraTimePurchaseDate: Long = 0L,
     val blockedApps: Set<String> = emptySet(),
     val appsExceededLimitToday: Set<String> = emptySet(),
-    val appLimits: Map<String, Long> = emptyMap() // Package name to limit in millis
+    val appLimits: Map<String, Long> = emptyMap(), // Package name to limit in millis
+    val lastStreakDay: Int = -1
 )
 
 class UserPreferences(private val context: Context) {
@@ -44,8 +45,9 @@ class UserPreferences(private val context: Context) {
         private val LAST_EXTRA_TIME_PURCHASE = longPreferencesKey("last_extra_time_purchase")
         private val BLOCKED_APPS = stringSetPreferencesKey("blocked_apps")
         private val EXCEEDED_APPS = stringSetPreferencesKey("exceeded_apps")
-        private val APP_LIMITS = stringPreferencesKey("app_limits") // JSON or CSV: pkg1:limit1,pkg2:limit2
+        private val APP_LIMITS = stringPreferencesKey("app_limits")
         private val LAST_RESET_DAY = intPreferencesKey("last_reset_day")
+        private val LAST_STREAK_DAY = intPreferencesKey("last_streak_day")
     }
 
     val userProfileFlow: Flow<UserProfile> = context.dataStore.data.map { preferences ->
@@ -75,7 +77,8 @@ class UserPreferences(private val context: Context) {
             lastExtraTimePurchaseDate = preferences[LAST_EXTRA_TIME_PURCHASE] ?: 0L,
             blockedApps = preferences[BLOCKED_APPS] ?: emptySet(),
             appsExceededLimitToday = exceededApps,
-            appLimits = appLimits
+            appLimits = appLimits,
+            lastStreakDay = preferences[LAST_STREAK_DAY] ?: -1
         )
     }
 
@@ -95,6 +98,7 @@ class UserPreferences(private val context: Context) {
             preferences[LAST_EXTRA_TIME_PURCHASE] = profile.lastExtraTimePurchaseDate
             preferences[BLOCKED_APPS] = profile.blockedApps
             preferences[APP_LIMITS] = profile.appLimits.entries.joinToString(",") { "${it.key}:${it.value}" }
+            preferences[LAST_STREAK_DAY] = profile.lastStreakDay
         }
     }
 
@@ -107,8 +111,10 @@ class UserPreferences(private val context: Context) {
 
     suspend fun updateStreak(streak: Int, history: List<Int>) {
         context.dataStore.edit { preferences ->
+            val currentDay = Calendar.getInstance().get(Calendar.DAY_OF_YEAR)
             preferences[STREAK_COUNT] = streak
             preferences[STREAK_HISTORY] = history.joinToString(",")
+            preferences[LAST_STREAK_DAY] = currentDay
         }
     }
 

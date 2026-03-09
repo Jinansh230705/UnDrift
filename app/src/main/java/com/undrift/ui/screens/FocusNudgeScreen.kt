@@ -1,5 +1,7 @@
 package com.undrift.ui.screens
 
+import android.content.Context
+import android.content.pm.PackageManager
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -8,47 +10,51 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Stars
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.graphics.drawable.toBitmap
 import com.undrift.ui.theme.SurfaceColor
 import com.undrift.ui.theme.TextSecondary
 
 @Composable
 fun FocusNudgeScreen(
+    packageName: String?,
+    reason: String?,
     onBackToFocus: () -> Unit,
     onNeedTime: () -> Unit
 ) {
+    val context = LocalContext.current
+    val pm = context.packageManager
+    
+    val appName = try {
+        packageName?.let { pm.getApplicationLabel(pm.getApplicationInfo(it, 0)).toString() } ?: "App"
+    } catch (e: Exception) {
+        "App"
+    }
+    
+    val appIcon = try {
+        packageName?.let { pm.getApplicationIcon(it).toBitmap().asImageBitmap() }
+    } catch (e: Exception) {
+        null
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.9f))
+            .background(Color.Black.copy(alpha = 0.95f))
             .padding(24.dp)
     ) {
-        // Mock Status Bar
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text("9:41", color = Color.White, fontWeight = FontWeight.Bold)
-            Row {
-                Icon(Icons.Default.Bolt, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Icon(Icons.Default.Stars, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-            }
-        }
-
         Card(
             modifier = Modifier
                 .align(Alignment.Center)
@@ -60,44 +66,31 @@ fun FocusNudgeScreen(
                 modifier = Modifier.padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Drag handle
-                Box(
-                    modifier = Modifier
-                        .width(40.dp)
-                        .height(4.dp)
-                        .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.2f))
-                )
-                
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Agent Avatar
+                // App Icon or Agent Icon
                 Box(
                     modifier = Modifier
                         .size(100.dp)
                         .clip(CircleShape)
                         .background(Color.DarkGray)
                 ) {
-                    // In a real app, use an Image here
-                    Icon(
-                        imageVector = Icons.Default.Bolt,
-                        contentDescription = null,
-                        modifier = Modifier.size(40.dp).align(Alignment.Center),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
+                    if (appIcon != null) {
+                        Image(
+                            bitmap = appIcon,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize().padding(20.dp)
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Bolt,
+                            contentDescription = null,
+                            modifier = Modifier.size(40.dp).align(Alignment.Center),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(24.dp))
 
-                Text(
-                    text = "Focus Agent",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
                 Surface(
                     color = Color.Black.copy(alpha = 0.3f),
                     shape = RoundedCornerShape(16.dp)
@@ -114,7 +107,7 @@ fun FocusNudgeScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            "CONTEXT AGENT ACTIVE",
+                            "FOCUS AGENT BLOCKING",
                             style = MaterialTheme.typography.labelSmall,
                             color = TextSecondary,
                             letterSpacing = 1.sp
@@ -122,10 +115,10 @@ fun FocusNudgeScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(32.dp))
+                Spacer(modifier = Modifier.height(24.dp))
 
                 Text(
-                    text = "You've been focused for 20 mins—keep the momentum?",
+                    text = if (reason == "LIMIT_EXCEEDED") "Time's Up for $appName!" else "Focus Alert!",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
@@ -135,7 +128,9 @@ fun FocusNudgeScreen(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    text = "I noticed you're exploring content that might break your current deep work streak.",
+                    text = if (reason == "LIMIT_EXCEEDED") 
+                        "You've reached your daily limit for $appName. Stay focused on your goals instead."
+                        else "This app is currently blocked because you're in Deep Work mode.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondary,
                     textAlign = TextAlign.Center
@@ -167,15 +162,11 @@ fun FocusNudgeScreen(
                     border = null,
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White, containerColor = Color.White.copy(alpha = 0.05f))
                 ) {
-                    Text("I need 2 mins", fontSize = 16.sp)
+                    Text("Unlock with 50 Points", fontSize = 16.sp)
                 }
 
                 Spacer(modifier = Modifier.height(32.dp))
                 
-                HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
-                
-                Spacer(modifier = Modifier.height(24.dp))
-
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         imageVector = Icons.Default.Stars,
@@ -185,20 +176,11 @@ fun FocusNudgeScreen(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        "92% of users stay on track after this nudge",
+                        "Resisting distractions builds your streak",
                         style = MaterialTheme.typography.labelMedium,
                         color = Color.White.copy(alpha = 0.7f)
                     )
                 }
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                Text(
-                    "+15 FOCUS POINTS FOR RETURNING NOW",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold
-                )
             }
         }
     }

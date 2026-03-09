@@ -3,6 +3,7 @@ package com.undrift.ui.screens
 import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -19,17 +20,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
 import com.undrift.data.UserPreferences
 import com.undrift.data.UserProfile
 import com.undrift.service.FocusService
 import com.undrift.ui.theme.SurfaceColor
 import com.undrift.ui.theme.TextSecondary
+import com.undrift.utils.AppUsageInfo
 import com.undrift.utils.UsageStatsHelper
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -46,11 +51,14 @@ fun DashboardScreen(
     val scope = rememberCoroutineScope()
     var isFocusModeActive by remember { mutableStateOf(false) }
     var screenTimeToday by remember { mutableStateOf(0L) }
+    var appUsageList by remember { mutableStateOf(listOf<AppUsageInfo>()) }
     var showDurationDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         while (true) {
             screenTimeToday = UsageStatsHelper.getScreenTimeToday(context)
+            // Updated to descending order
+            appUsageList = UsageStatsHelper.getAppUsageStats(context)
             delay(30000)
         }
     }
@@ -207,6 +215,10 @@ fun DashboardScreen(
                     
                     Spacer(modifier = Modifier.height(16.dp))
                     
+                    val hr = userProfile.focusDurationMinutes / 3600
+                    val min = (userProfile.focusDurationMinutes % 3600) / 60
+                    val sec = userProfile.focusDurationMinutes % 60
+                    
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -221,7 +233,7 @@ fun DashboardScreen(
                             Icon(Icons.Default.Timer, contentDescription = null, tint = Color.White)
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "${userProfile.focusDurationMinutes} Minutes",
+                                text = String.format("%02dh %02dm %02ds", hr, min, sec),
                                 style = MaterialTheme.typography.headlineSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
@@ -234,7 +246,7 @@ fun DashboardScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Usage Monitor Card
+            // Usage Monitor Card (Summary)
             val dailyGoalMillis = 5 * 60 * 60 * 1000L
             val progress = (screenTimeToday.toFloat() / dailyGoalMillis).coerceAtMost(1f)
             val hours = screenTimeToday / (60 * 60 * 1000)
@@ -273,6 +285,34 @@ fun DashboardScreen(
                         Spacer(modifier = Modifier.width(12.dp))
                         Text("${hours}h ${minutes}m / 5h", style = MaterialTheme.typography.bodySmall, color = Color.White)
                     }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // App Usage List
+                    Text("App Breakdown", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    appUsageList.filter { it.usageTimeMillis > 0 }.forEach { app ->
+                        val appHours = app.usageTimeMillis / (60 * 60 * 1000)
+                        val appMinutes = (app.usageTimeMillis % (60 * 60 * 1000)) / (60 * 1000)
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            app.icon?.let { icon ->
+                                Image(
+                                    bitmap = icon.toBitmap().asImageBitmap(),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                            }
+                            Text(app.appName, style = MaterialTheme.typography.bodySmall, color = Color.White, modifier = Modifier.weight(1f))
+                            Text("${appHours}h ${appMinutes}m", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                        }
+                    }
                 }
             }
 
@@ -298,34 +338,78 @@ fun DashboardScreen(
                 )
             }
             
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(100.dp))
         }
     }
 
     if (showDurationDialog) {
-        var tempDuration by remember { mutableStateOf(userProfile.focusDurationMinutes.toString()) }
-        AlertDialog(
-            onDismissRequest = { showDurationDialog = false },
-            title = { Text("Set Focus Duration") },
-            text = {
-                TextField(
-                    value = tempDuration,
-                    onValueChange = { if (it.all { char -> char.isDigit() }) tempDuration = it },
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
-                    label = { Text("Minutes") }
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    scope.launch {
-                        userPreferences.setFocusDuration(tempDuration.toIntOrNull() ?: 60)
-                        showDurationDialog = false
-                    }
-                }) {
-                    Text("OK")
+        CustomTimePickerDialog(
+            initialSeconds = userProfile.focusDurationMinutes,
+            onDismiss = { showDurationDialog = false },
+            onConfirm = { totalSeconds ->
+                scope.launch {
+                    userPreferences.setFocusDuration(totalSeconds)
+                    showDurationDialog = false
                 }
             }
         )
+    }
+}
+
+@Composable
+fun CustomTimePickerDialog(
+    initialSeconds: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (Int) -> Unit
+) {
+    var hours by remember { mutableIntStateOf(initialSeconds / 3600) }
+    var minutes by remember { mutableIntStateOf((initialSeconds % 3600) / 60) }
+    var seconds by remember { mutableIntStateOf(initialSeconds % 60) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Set Focus Duration") },
+        text = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                NumberPicker(value = hours, range = 0..23, label = "HH") { hours = it }
+                Text(":", fontWeight = FontWeight.Bold)
+                NumberPicker(value = minutes, range = 0..59, label = "MM") { minutes = it }
+                Text(":", fontWeight = FontWeight.Bold)
+                NumberPicker(value = seconds, range = 0..59, label = "SS") { seconds = it }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(hours * 3600 + minutes * 60 + seconds) }) {
+                Text("Set")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun NumberPicker(value: Int, range: IntRange, label: String, onValueChange: (Int) -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, style = MaterialTheme.typography.labelSmall)
+        IconButton(onClick = { if (value < range.last) onValueChange(value + 1) }) {
+            Icon(Icons.Default.KeyboardArrowUp, contentDescription = null)
+        }
+        Text(
+            text = String.format("%02d", value),
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold
+        )
+        IconButton(onClick = { if (value > range.first) onValueChange(value - 1) }) {
+            Icon(Icons.Default.KeyboardArrowDown, contentDescription = null)
+        }
     }
 }
 

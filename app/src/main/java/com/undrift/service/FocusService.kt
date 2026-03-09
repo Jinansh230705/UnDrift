@@ -1,6 +1,7 @@
 package com.undrift.service
 
 import android.app.*
+import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
@@ -8,7 +9,6 @@ import android.os.*
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.undrift.MainActivity
-import com.undrift.R
 import com.undrift.data.MongoRepository
 import com.undrift.data.UserPreferences
 import com.undrift.utils.UsageStatsHelper
@@ -24,43 +24,57 @@ class FocusService : Service() {
     private var isFocusModeActive = false
     private var focusEndTime = 0L
     private var monitoringJob: Job? = null
+    
+    private var lastBlockedPackage: String? = null
+    private var lastBlockTime: Long = 0
+
+    companion object {
+        private const val TAG = "FocusService"
+    }
 
     override fun onCreate() {
         super.onCreate()
         userPreferences = UserPreferences(this)
         createNotificationChannel()
+        startBackgroundMonitoring()
+    }
+
+    private fun startBackgroundMonitoring() {
+        serviceScope.launch {
+            while (true) {
+                checkForegroundAndBlock()
+                delay(800) 
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
         when (action) {
             "START_FOCUS" -> {
-                val durationMinutes = intent.getIntExtra("DURATION", 60)
-                startFocusMode(durationMinutes)
+                val durationSeconds = intent.getIntExtra("DURATION", 3600)
+                startFocusMode(durationSeconds)
             }
             "STOP_FOCUS" -> stopFocusMode()
         }
         return START_STICKY
     }
 
-    private fun startFocusMode(durationMinutes: Int) {
+    private fun startFocusMode(durationSeconds: Int) {
         isFocusModeActive = true
-        focusEndTime = System.currentTimeMillis() + (durationMinutes * 60 * 1000)
+        focusEndTime = System.currentTimeMillis() + (durationSeconds * 1000L)
         
-        val notification = createNotification("Focus Mode Active", "Stay focused for $durationMinutes minutes")
+        val notification = createNotification("Focus Mode Active", "Stay away from distractions!")
         startForeground(1, notification)
         
         monitoringJob?.cancel()
         monitoringJob = serviceScope.launch {
             while (isFocusModeActive) {
-                checkAppUsage()
-                checkAppLimits()
-                
                 if (System.currentTimeMillis() >= focusEndTime) {
                     completeFocusSession()
                     break
                 }
-                delay(5000) // Check every 5 seconds
+                delay(2000)
             }
         }
     }
@@ -69,105 +83,154 @@ class FocusService : Service() {
         isFocusModeActive = false
         monitoringJob?.cancel()
         stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
     }
 
     private suspend fun completeFocusSession() {
         val profile = userPreferences.userProfileFlow.first()
-        val newPoints = profile.points + 300
-        val newStreak = profile.streakCount + 1
+        val currentDay = Calendar.getInstance().get(Calendar.DAY_OF_YEAR)
         
-        // Update history
-        val history = profile.streakHistory.toMutableList()
-        if (history.isNotEmpty()) {
-            history[history.size - 1] += profile.focusDurationMinutes
-        }
+        if (profile.lastStreakDay != currentDay) {
+            val newPoints = profile.points + 300
+            val newStreak = profile.streakCount + 1
+            
+            val history = profile.streakHistory.toMutableList()
+            if (history.isNotEmpty()) {
+                history[history.size - 1] += profile.focusDurationMinutes / 60
+            }
 
-        userPreferences.updatePoints(300)
-        userPreferences.updateStreak(newStreak, history)
-        
-        // Sync to Mongo
-        mongoRepository.updateUserStats(profile.email, newPoints, newStreak, history)
+            userPreferences.updatePoints(300)
+            userPreferences.updateStreak(newStreak, history)
+            mongoRepository.updateUserStats(profile.email, newPoints, newStreak, history)
+        }
         
         stopFocusMode()
     }
 
-    private suspend fun checkAppUsage() {
-        val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-        val time = System.currentTimeMillis()
-        val stats = usageStatsManager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, time - 10000, time)
-        
-        if (stats != null) {
-            val profile = userPreferences.userProfileFlow.first()
-            val blockedApps = profile.blockedApps
-            
-            val sortedStats = stats.sortedByDescending { it.lastTimeUsed }
-            if (sortedStats.isNotEmpty()) {
-                val topApp = sortedStats[0].packageName
-                if (blockedApps.contains(topApp) && topApp != packageName) {
-                    showNudgeNotification(topApp)
-                }
-            }
-        }
-    }
+    private suspend fun checkForegroundAndBlock() {
+        val foregroundPkg = getForegroundPackage()
+        if (foregroundPkg == null || foregroundPkg == packageName) return
 
-    private suspend fun checkAppLimits() {
         val profile = userPreferences.userProfileFlow.first()
-        if (profile.appLimits.isEmpty()) return
+        
+        // 1. Check strict blocks (Focus Mode)
+        if (isFocusModeActive && profile.blockedApps.contains(foregroundPkg)) {
+            triggerBlockOverlay(foregroundPkg, "STRICT_BLOCK")
+            return
+        }
 
-        val usageStats = UsageStatsHelper.getAppUsageStats(this)
-        for (usage in usageStats) {
-            val limit = profile.appLimits[usage.packageName]
-            if (limit != null && limit > 0 && usage.usageTimeMillis >= limit) {
-                if (!profile.appsExceededLimitToday.contains(usage.packageName)) {
-                    userPreferences.markAppExceeded(usage.packageName)
-                    showLimitExceededNotification(usage.appName, usage.packageName)
-                }
+        // 2. Check App Limits
+        val limit = profile.appLimits[foregroundPkg]
+        if (limit != null && limit > 0) {
+            val totalUsageToday = UsageStatsHelper.getAppUsageStats(this)
+                .find { it.packageName == foregroundPkg }?.usageTimeMillis ?: 0L
+            
+            if (totalUsageToday >= limit) {
+                triggerBlockOverlay(foregroundPkg, "LIMIT_EXCEEDED")
+            } else if (limit - totalUsageToday <= 60000) {
+                showWarningNotification(foregroundPkg, (limit - totalUsageToday) / 1000)
             }
         }
     }
 
-    private fun showLimitExceededNotification(appName: String, packageName: String) {
+    private fun getForegroundPackage(): String? {
+        val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val endTime = System.currentTimeMillis()
+        val startTime = endTime - 10000
+        
+        val events = usm.queryEvents(startTime, endTime)
+        val event = UsageEvents.Event()
+        var lastPkg: String? = null
+        
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED) {
+                lastPkg = event.packageName
+            }
+        }
+        return lastPkg
+    }
+
+    private fun triggerBlockOverlay(packageName: String, reason: String) {
+        val now = System.currentTimeMillis()
+        if (lastBlockedPackage == packageName && now - lastBlockTime < 2000) return
+        
+        lastBlockedPackage = packageName
+        lastBlockTime = now
+
+        Log.d(TAG, "Triggering overlay for $packageName due to $reason")
+
+        val intent = Intent(this, MainActivity::class.java).apply {
+            action = Intent.ACTION_MAIN
+            addCategory(Intent.CATEGORY_LAUNCHER)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or 
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra("SCREEN", "nudge")
+            putExtra("PACKAGE", packageName)
+            putExtra("REASON", reason)
+        }
+        
+        // Use a PendingIntent with high priority flags to force the launch
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, intent, 
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        
+        try {
+            // This sends the intent directly, forcing the activity to launch
+            pendingIntent.send()
+        } catch (e: PendingIntent.CanceledException) {
+            // Fallback to direct startActivity if PendingIntent fails
+            startActivity(intent)
+        }
+        
+        // Optional fallback: keep showing notification just in case OS blocks background launch
+        showNudgeNotification(packageName, reason)
+    }
+
+    private fun showWarningNotification(pkgName: String, secondsLeft: Long) {
+        val notification = NotificationCompat.Builder(this, "focus_channel")
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentTitle("Stop Drifting!")
+            .setContentText("You'll be over the limit for this app in $secondsLeft seconds.")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setAutoCancel(true)
+            .build()
+
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(pkgName.hashCode() + 100, notification)
+    }
+
+    private fun showNudgeNotification(packageName: String, reason: String) {
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             putExtra("SCREEN", "nudge")
             putExtra("PACKAGE", packageName)
-            putExtra("REASON", "LIMIT_EXCEEDED")
+            putExtra("REASON", reason)
         }
-        val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val pendingIntent = PendingIntent.getActivity(
+            this, 
+            packageName.hashCode(), 
+            intent, 
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val title = if (reason == "LIMIT_EXCEEDED") "Time's Up!" else "Focus Alert!"
+        val text = if (reason == "LIMIT_EXCEEDED") "Daily limit reached for this app." else "Close this app to stay focused."
 
         val notification = NotificationCompat.Builder(this, "focus_channel")
-            .setSmallIcon(android.R.drawable.ic_dialog_alert)
-            .setContentTitle("Time's Up for $appName")
-            .setContentText("You've reached your daily limit for this app.")
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setFullScreenIntent(pendingIntent, true)
+            .setSmallIcon(android.R.drawable.ic_lock_lock)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setFullScreenIntent(pendingIntent, true) // This helps on many OS versions
             .setAutoCancel(true)
             .build()
 
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.notify(packageName.hashCode(), notification)
-    }
-
-    private fun showNudgeNotification(packageName: String) {
-        val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-            putExtra("SCREEN", "nudge")
-            putExtra("PACKAGE", packageName)
-        }
-        val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-
-        val notification = NotificationCompat.Builder(this, "focus_channel")
-            .setSmallIcon(android.R.drawable.ic_dialog_alert)
-            .setContentTitle("Focus Alert!")
-            .setContentText("You should close this app and stay focused.")
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setFullScreenIntent(pendingIntent, true)
-            .setAutoCancel(true)
-            .build()
-
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.notify(2, notification)
     }
 
     private fun createNotification(title: String, content: String): Notification {
@@ -179,6 +242,7 @@ class FocusService : Service() {
             .setContentText(content)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
             .setContentIntent(pendingIntent)
+            .setOngoing(true)
             .build()
     }
 
@@ -188,7 +252,11 @@ class FocusService : Service() {
                 "focus_channel",
                 "Focus Mode Notifications",
                 NotificationManager.IMPORTANCE_HIGH
-            )
+            ).apply {
+                description = "Used for app blocking and focus alerts"
+                setBypassDnd(true)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            }
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(channel)
         }
