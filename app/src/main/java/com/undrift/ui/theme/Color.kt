@@ -2,9 +2,11 @@ package com.undrift.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val DarkBackground = Color(0xFF0B101F)
-val SurfaceColor = Color(0xFF161C2C)
-val PrimaryBlue = Color(0xFF2E5BFF)
+val DarkBackground = Color(0xFF212121)
+val SurfaceColor = Color(0xFF313131)
+val Lavender = Color(0xFFCE705D) // Default to Orange
+val PrimaryBlue = Color(0xFF685DCE)
+val OrangeColor = Color(0xFFCE705D)
 val TextPrimary = Color(0xFFFFFFFF)
 val TextSecondary = Color(0xFF8A91A8)
 val Orange = Color(0xFFFF9800)

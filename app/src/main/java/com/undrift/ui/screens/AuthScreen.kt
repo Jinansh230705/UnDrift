@@ -33,8 +33,10 @@ import androidx.compose.ui.unit.sp
 import com.undrift.data.MongoRepository
 import com.undrift.data.UserPreferences
 import com.undrift.data.UserProfile
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun AuthScreen(
@@ -42,7 +44,7 @@ fun AuthScreen(
     mongoRepository: MongoRepository,
     userPreferences: UserPreferences
 ) {
-    var isSignUp by remember { mutableStateOf(true) }
+    var isSignUp by remember { mutableStateOf(false) } // Default to login for faster entry
     var name by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -129,33 +131,37 @@ fun AuthScreen(
                     scope.launch {
                         if (isSignUp) {
                             if (name.isEmpty()) {
-                                Toast.makeText(context, "Please enter your name", Toast.LENGTH_SHORT).show()
-                                isLoading = false
+                                withContext(Dispatchers.Main) {
+                                    Toast.makeText(context, "Please enter your name", Toast.LENGTH_SHORT).show()
+                                    isLoading = false
+                                }
                                 return@launch
                             }
                             val profile = UserProfile(name, email, password, age, goal, true)
                             
-                            // Try Mongo First
                             try {
-                                val success = mongoRepository.saveUserToMongo(profile)
-                                if (success) {
-                                    Log.d("AuthScreen", "Signup success with Mongo")
-                                    onAuthSuccess(profile)
-                                } else {
-                                    // Fallback to local
-                                    Log.w("AuthScreen", "Mongo signup failed, falling back to local")
-                                    Toast.makeText(context, "signing in with v2", Toast.LENGTH_SHORT).show()
+                                val success = withContext(Dispatchers.IO) { mongoRepository.saveUserToMongo(profile) }
+                                withContext(Dispatchers.Main) {
                                     onAuthSuccess(profile)
                                 }
                             } catch (e: Exception) {
-                                Log.e("AuthScreen", "Mongo Exception, falling back to local", e)
-                                Toast.makeText(context, "signing in with v2", Toast.LENGTH_SHORT).show()
-                                onAuthSuccess(profile)
+                                withContext(Dispatchers.Main) {
+                                    onAuthSuccess(profile)
+                                }
                             }
                         } else {
-                            // Login: Try Mongo First
+                            // FAST LOGIN: Check local first
+                            val localProfile = withContext(Dispatchers.IO) { userPreferences.userProfileFlow.first() }
+                            if (localProfile.email == email && localProfile.password == password) {
+                                withContext(Dispatchers.Main) {
+                                    onAuthSuccess(localProfile.copy(isLoggedIn = true))
+                                }
+                                return@launch
+                            }
+
+                            // If not found locally or password mismatch, try Mongo
                             try {
-                                val userDoc = mongoRepository.findUserByEmail(email)
+                                val userDoc = withContext(Dispatchers.IO) { mongoRepository.findUserByEmail(email) }
                                 if (userDoc != null) {
                                     val dbPassword = userDoc.getString("password")
                                     if (dbPassword == password) {
@@ -167,24 +173,27 @@ fun AuthScreen(
                                             goal = userDoc.getString("goal") ?: "",
                                             isLoggedIn = true
                                         )
-                                        onAuthSuccess(profile)
+                                        withContext(Dispatchers.Main) {
+                                            onAuthSuccess(profile)
+                                        }
                                     } else {
-                                        isLoading = false
-                                        Toast.makeText(context, "Incorrect password.", Toast.LENGTH_SHORT).show()
+                                        withContext(Dispatchers.Main) {
+                                            isLoading = false
+                                            Toast.makeText(context, "Incorrect password.", Toast.LENGTH_SHORT).show()
+                                        }
                                     }
                                 } else {
-                                    // Mongo returned nothing, check local
-                                    checkLocalLogin(email, password, userPreferences, onAuthSuccess, {
+                                    withContext(Dispatchers.Main) {
                                         isLoading = false
-                                        Toast.makeText(context, "signing in with v2", Toast.LENGTH_SHORT).show()
-                                    })
+                                        Toast.makeText(context, "User not found.", Toast.LENGTH_SHORT).show()
+                                    }
                                 }
                             } catch (e: Exception) {
-                                Log.e("AuthScreen", "Mongo Login error, checking local", e)
-                                checkLocalLogin(email, password, userPreferences, onAuthSuccess, {
+                                Log.e("AuthScreen", "Mongo Login error", e)
+                                withContext(Dispatchers.Main) {
                                     isLoading = false
-                                    Toast.makeText(context, "signing in with v2", Toast.LENGTH_SHORT).show()
-                                })
+                                    Toast.makeText(context, "Login failed. Check connection.", Toast.LENGTH_SHORT).show()
+                                }
                             }
                         }
                     }
@@ -215,23 +224,6 @@ fun AuthScreen(
                 color = MaterialTheme.colorScheme.primary
             )
         }
-    }
-}
-
-private suspend fun checkLocalLogin(
-    email: String,
-    password: String,
-    userPreferences: UserPreferences,
-    onAuthSuccess: (UserProfile) -> Unit,
-    onError: (String) -> Unit
-) {
-    val localProfile = userPreferences.userProfileFlow.first()
-    if (localProfile.email == email && localProfile.password == password) {
-        onAuthSuccess(localProfile.copy(isLoggedIn = true))
-    } else if (localProfile.email == email) {
-        onError("Incorrect local password.")
-    } else {
-        onError("User not found.")
     }
 }
 

@@ -26,7 +26,9 @@ data class UserProfile(
     val blockedApps: Set<String> = emptySet(),
     val appsExceededLimitToday: Set<String> = emptySet(),
     val appLimits: Map<String, Long> = emptyMap(), // Package name to limit in millis
-    val lastStreakDay: Int = -1
+    val lastStreakDate: Long = 0L,
+    val themeColor: Long = 0xFFCE705D, // Default to Orange
+    val demoMode: Boolean = false
 )
 
 class UserPreferences(private val context: Context) {
@@ -47,7 +49,9 @@ class UserPreferences(private val context: Context) {
         private val EXCEEDED_APPS = stringSetPreferencesKey("exceeded_apps")
         private val APP_LIMITS = stringPreferencesKey("app_limits")
         private val LAST_RESET_DAY = intPreferencesKey("last_reset_day")
-        private val LAST_STREAK_DAY = intPreferencesKey("last_streak_day")
+        private val LAST_STREAK_DATE = longPreferencesKey("last_streak_date")
+        private val THEME_COLOR = longPreferencesKey("theme_color")
+        private val DEMO_MODE = booleanPreferencesKey("demo_mode")
     }
 
     val userProfileFlow: Flow<UserProfile> = context.dataStore.data.map { preferences ->
@@ -62,6 +66,23 @@ class UserPreferences(private val context: Context) {
             parts[0] to (parts[1].toLongOrNull() ?: 0L)
         }
 
+        // Auto-reset streak if no consecutive calendar days
+        val rawStreak = preferences[STREAK_COUNT] ?: 0
+        val lastStreakDateMillis = preferences[LAST_STREAK_DATE] ?: 0L
+        val effectiveStreak = if (lastStreakDateMillis > 0 && rawStreak > 0) {
+            val todayStart = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+            val lastDayStart = Calendar.getInstance().apply {
+                timeInMillis = lastStreakDateMillis
+                set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+            val dayDiff = (todayStart - lastDayStart) / (24 * 60 * 60 * 1000L)
+            if (dayDiff > 1) 0 else rawStreak
+        } else rawStreak
+
         UserProfile(
             name = preferences[NAME] ?: "",
             email = preferences[EMAIL] ?: "",
@@ -71,14 +92,16 @@ class UserPreferences(private val context: Context) {
             isLoggedIn = preferences[IS_LOGGED_IN] ?: false,
             isFirstLaunch = preferences[IS_FIRST_LAUNCH] ?: true,
             points = preferences[POINTS] ?: 0,
-            streakCount = preferences[STREAK_COUNT] ?: 0,
+            streakCount = effectiveStreak,
             streakHistory = (preferences[STREAK_HISTORY] ?: "0,0,0,0,0,0,0").split(",").map { it.toIntOrNull() ?: 0 },
             focusDurationMinutes = preferences[FOCUS_DURATION] ?: 60,
             lastExtraTimePurchaseDate = preferences[LAST_EXTRA_TIME_PURCHASE] ?: 0L,
             blockedApps = preferences[BLOCKED_APPS] ?: emptySet(),
             appsExceededLimitToday = exceededApps,
             appLimits = appLimits,
-            lastStreakDay = preferences[LAST_STREAK_DAY] ?: -1
+            lastStreakDate = lastStreakDateMillis,
+            themeColor = preferences[THEME_COLOR] ?: 0xFFCE705D,
+            demoMode = preferences[DEMO_MODE] ?: false
         )
     }
 
@@ -98,7 +121,14 @@ class UserPreferences(private val context: Context) {
             preferences[LAST_EXTRA_TIME_PURCHASE] = profile.lastExtraTimePurchaseDate
             preferences[BLOCKED_APPS] = profile.blockedApps
             preferences[APP_LIMITS] = profile.appLimits.entries.joinToString(",") { "${it.key}:${it.value}" }
-            preferences[LAST_STREAK_DAY] = profile.lastStreakDay
+            preferences[LAST_STREAK_DATE] = profile.lastStreakDate
+            preferences[THEME_COLOR] = profile.themeColor
+        }
+    }
+
+    suspend fun setThemeColor(color: Long) {
+        context.dataStore.edit { preferences ->
+            preferences[THEME_COLOR] = color
         }
     }
 
@@ -111,10 +141,23 @@ class UserPreferences(private val context: Context) {
 
     suspend fun updateStreak(streak: Int, history: List<Int>) {
         context.dataStore.edit { preferences ->
-            val currentDay = Calendar.getInstance().get(Calendar.DAY_OF_YEAR)
             preferences[STREAK_COUNT] = streak
             preferences[STREAK_HISTORY] = history.joinToString(",")
-            preferences[LAST_STREAK_DAY] = currentDay
+            preferences[LAST_STREAK_DATE] = System.currentTimeMillis()
+        }
+    }
+
+    suspend fun resetStreak() {
+        context.dataStore.edit { preferences ->
+            preferences[STREAK_COUNT] = 0
+            preferences[LAST_STREAK_DATE] = 0L
+        }
+    }
+
+    suspend fun deductPoints(amount: Int) {
+        context.dataStore.edit { preferences ->
+            val current = preferences[POINTS] ?: 0
+            preferences[POINTS] = (current - amount).coerceAtLeast(0)
         }
     }
 
@@ -162,6 +205,12 @@ class UserPreferences(private val context: Context) {
     suspend fun setFirstLaunchCompleted() {
         context.dataStore.edit { preferences ->
             preferences[IS_FIRST_LAUNCH] = false
+        }
+    }
+
+    suspend fun setDemoMode(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[DEMO_MODE] = enabled
         }
     }
 

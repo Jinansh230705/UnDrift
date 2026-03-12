@@ -11,11 +11,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,21 +30,28 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.undrift.data.UserPreferences
 import com.undrift.data.UserProfile
+import com.undrift.ui.theme.Lavender
 import com.undrift.ui.theme.Orange
+import com.undrift.ui.theme.OrangeColor
 import com.undrift.ui.theme.SurfaceColor
 import com.undrift.ui.theme.TextSecondary
+import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.util.Locale
 
 @Composable
 fun ProfileScreen(
     userProfile: UserProfile,
+    userPreferences: UserPreferences,
     onBack: () -> Unit,
     onLogout: () -> Unit,
     onNavigateToAgents: () -> Unit,
-    onNavigateToShop: () -> Unit
+    onNavigateToShop: () -> Unit,
+    onColorSelect: (Long) -> Unit
 ) {
+    val scope = rememberCoroutineScope()
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -149,6 +159,42 @@ fun ProfileScreen(
         // Preferences
         Text("Preferences", style = MaterialTheme.typography.titleMedium, color = Color.White)
         Spacer(modifier = Modifier.height(16.dp))
+        
+        // Color Selection
+        var showColorDialog by remember { mutableStateOf(false) }
+        PreferenceItem(
+            icon = Icons.Default.ColorLens,
+            title = "Theme Color",
+            subtitle = if (userProfile.themeColor == 0xFFCE705D) "Orange" else "Lavender",
+            onClick = { showColorDialog = true }
+        )
+
+        if (showColorDialog) {
+            AlertDialog(
+                onDismissRequest = { showColorDialog = false },
+                title = { Text("Select Theme Color", color = Color.White) },
+                containerColor = SurfaceColor,
+                text = {
+                    Column {
+                        ColorOption("Orange", OrangeColor, userProfile.themeColor == 0xFFCE705D) {
+                            onColorSelect(0xFFCE705D)
+                            showColorDialog = false
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        ColorOption("Lavender", Lavender, userProfile.themeColor == 0xFF685DCE) {
+                            onColorSelect(0xFF685DCE)
+                            showColorDialog = false
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showColorDialog = false }) {
+                        Text("Cancel", color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            )
+        }
+
         PreferenceItem(
             icon = Icons.Default.SmartToy, 
             title = "AI Agent Settings", 
@@ -174,6 +220,23 @@ fun ProfileScreen(
         )
 
         Spacer(modifier = Modifier.height(32.dp))
+
+        // Misc
+        Text("Misc", style = MaterialTheme.typography.titleMedium, color = Color.White)
+        Spacer(modifier = Modifier.height(16.dp))
+
+        PreferenceItem(
+            icon = Icons.Default.Science,
+            title = "Demo Mode",
+            subtitle = if (userProfile.demoMode) "Showing sample data" else "Off",
+            showSwitch = true,
+            checked = userProfile.demoMode,
+            onCheckedChange = { enabled ->
+                scope.launch { userPreferences.setDemoMode(enabled) }
+            }
+        )
+
+        Spacer(modifier = Modifier.height(32.dp))
         
         Text(
             text = "Log Out",
@@ -184,6 +247,31 @@ fun ProfileScreen(
         )
         
         Spacer(modifier = Modifier.height(100.dp))
+    }
+}
+
+@Composable
+fun ColorOption(name: String, color: Color, isSelected: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (isSelected) color.copy(alpha = 0.2f) else Color.Transparent)
+            .clickable { onClick() }
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(24.dp)
+                .clip(CircleShape)
+                .background(color)
+        )
+        Spacer(modifier = Modifier.width(16.dp))
+        Text(name, color = Color.White, modifier = Modifier.weight(1f))
+        if (isSelected) {
+            Icon(Icons.Default.Notifications, contentDescription = null, tint = color, modifier = Modifier.size(20.dp))
+        }
     }
 }
 

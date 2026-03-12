@@ -4,6 +4,10 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// Android projects don't have a "testClasses" task (it's a JVM plugin task).
+// Register it so tools that expect it (e.g. VS Code / Gradle integrations) don't fail.
+tasks.register("testClasses")
+
 android {
     namespace = "com.undrift"
     compileSdk = 35
@@ -12,8 +16,8 @@ android {
         applicationId = "com.undrift"
         minSdk = 24
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.0.2"
+        versionCode = 3
+        versionName = "1.0.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

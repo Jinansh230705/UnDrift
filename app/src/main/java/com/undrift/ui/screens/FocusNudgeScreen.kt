@@ -2,6 +2,7 @@ package com.undrift.ui.screens
 
 import android.content.Context
 import android.content.pm.PackageManager
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -48,11 +49,16 @@ fun FocusNudgeScreen(
     } catch (e: Exception) {
         null
     }
+    
+    // Block back button - user must click a button to leave
+    BackHandler {
+        // Do nothing - prevents back button dismissal
+    }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.95f))
+            .background(Color.Black.copy(alpha = 0.98f))
             .padding(24.dp)
     ) {
         Card(
@@ -60,7 +66,8 @@ fun FocusNudgeScreen(
                 .align(Alignment.Center)
                 .fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = SurfaceColor),
-            shape = RoundedCornerShape(32.dp)
+            shape = RoundedCornerShape(32.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 16.dp)
         ) {
             Column(
                 modifier = Modifier.padding(24.dp),
@@ -118,7 +125,7 @@ fun FocusNudgeScreen(
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Text(
-                    text = if (reason == "LIMIT_EXCEEDED") "Time's Up for $appName!" else "Focus Alert!",
+                    text = if (reason == "LIMIT_EXCEEDED") "⏹ Time's Up for $appName!" else "🎯 Focus Alert!",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,

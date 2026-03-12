@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -34,6 +35,7 @@ import androidx.navigation.navArgument
 import com.undrift.data.MongoRepository
 import com.undrift.data.UserPreferences
 import com.undrift.data.UserProfile
+import com.undrift.service.FocusService
 import com.undrift.ui.screens.*
 import com.undrift.ui.theme.UnDriftTheme
 import kotlinx.coroutines.launch
@@ -51,14 +53,15 @@ class MainActivity : ComponentActivity() {
         intentState.value = intent
         
         checkPermissions()
+        startMonitoringService()
         
         enableEdgeToEdge()
         setContent {
-            UnDriftTheme {
-                val userProfile by userPreferences.userProfileFlow.collectAsStateWithLifecycle(
-                    initialValue = UserProfile("", "", "", "", "", false, true)
-                )
-                
+            val userProfile by userPreferences.userProfileFlow.collectAsStateWithLifecycle(
+                initialValue = UserProfile("", "", "", "", "", false, true)
+            )
+            
+            UnDriftTheme(themeColor = Color(userProfile.themeColor)) {
                 val navController = rememberNavController()
                 val scope = rememberCoroutineScope()
 
@@ -137,6 +140,7 @@ class MainActivity : ComponentActivity() {
                         composable("profile") {
                             ProfileScreen(
                                 userProfile = userProfile,
+                                userPreferences = userPreferences,
                                 onBack = { navController.popBackStack() },
                                 onLogout = {
                                     scope.launch {
@@ -147,7 +151,12 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 onNavigateToAgents = { navController.navigate("ai_agent") },
-                                onNavigateToShop = { navController.navigate("rewards") }
+                                onNavigateToShop = { navController.navigate("rewards") },
+                                onColorSelect = { color ->
+                                    scope.launch {
+                                        userPreferences.setThemeColor(color)
+                                    }
+                                }
                             )
                         }
                         composable("app_block") {
@@ -208,6 +217,11 @@ class MainActivity : ComponentActivity() {
         if (screen == "nudge") {
             val pkg = intent.getStringExtra("PACKAGE") ?: ""
             val reason = intent.getStringExtra("REASON") ?: ""
+            val forceOverlay = intent.getBooleanExtra("FORCE_OVERLAY", false)
+            
+            Log.d("MainActivity", "Processing nudge for package: $pkg, forceOverlay: $forceOverlay")
+            
+            // Navigate to nudge screen with animations disabled to prevent flickering
             navController.navigate("nudge?package=$pkg&reason=$reason") {
                 // Clear the backstack to prevent overlay bypass
                 popUpTo(navController.graph.findStartDestination().id) { inclusive = false }
@@ -230,6 +244,13 @@ class MainActivity : ComponentActivity() {
             )
             startActivity(intent)
         }
+    }
+
+    private fun startMonitoringService() {
+        val serviceIntent = Intent(this, FocusService::class.java).apply {
+            action = "START_MONITORING"
+        }
+        startForegroundService(serviceIntent)
     }
 }
 
@@ -271,18 +292,19 @@ fun BottomNavigationBar(
     navController: NavHostController,
     onAddClick: () -> Unit
 ) {
-    Surface(
-        color = com.undrift.ui.theme.SurfaceColor,
-        tonalElevation = 8.dp,
-        modifier = Modifier.navigationBarsPadding()
+    // Use Box to allow the FAB to overlap the NavigationBar
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding(),
+        contentAlignment = Alignment.BottomCenter
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(80.dp)
+        Surface(
+            color = com.undrift.ui.theme.SurfaceColor,
+            tonalElevation = 8.dp,
+            modifier = Modifier.fillMaxWidth().height(80.dp)
         ) {
             NavigationBar(
-                modifier = Modifier.align(Alignment.BottomCenter),
                 containerColor = Color.Transparent,
                 tonalElevation = 0.dp
             ) {
@@ -337,20 +359,19 @@ fun BottomNavigationBar(
                     )
                 )
             }
-            
-            FloatingActionButton(
-                onClick = onAddClick,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .offset(y = (-20).dp)
-                    .size(60.dp),
-                shape = CircleShape,
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = Color.White,
-                elevation = FloatingActionButtonDefaults.elevation(8.dp)
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Add", modifier = Modifier.size(30.dp))
-            }
+        }
+        
+        FloatingActionButton(
+            onClick = onAddClick,
+            modifier = Modifier
+                .offset(y = (-30).dp)
+                .size(60.dp),
+            shape = CircleShape,
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = Color.White,
+            elevation = FloatingActionButtonDefaults.elevation(8.dp)
+        ) {
+            Icon(Icons.Default.Add, contentDescription = "Add", modifier = Modifier.size(30.dp))
         }
     }
 }

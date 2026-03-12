@@ -18,13 +18,17 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -52,13 +56,21 @@ fun DashboardScreen(
     var isFocusModeActive by remember { mutableStateOf(false) }
     var screenTimeToday by remember { mutableStateOf(0L) }
     var appUsageList by remember { mutableStateOf(listOf<AppUsageInfo>()) }
+    var weeklyScreenTime by remember { mutableStateOf(List(7) { 0L }) }
     var showDurationDialog by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(Unit, userProfile.demoMode) {
         while (true) {
-            screenTimeToday = UsageStatsHelper.getScreenTimeToday(context)
-            // Updated to descending order
-            appUsageList = UsageStatsHelper.getAppUsageStats(context)
+            if (userProfile.demoMode) {
+                val demoWeekly = UsageStatsHelper.getDemoWeeklyScreenTime()
+                weeklyScreenTime = demoWeekly
+                screenTimeToday = demoWeekly.last()
+                appUsageList = UsageStatsHelper.getDemoAppUsageStats(context)
+            } else {
+                screenTimeToday = UsageStatsHelper.getScreenTimeToday(context)
+                appUsageList = UsageStatsHelper.getAppUsageStats(context)
+                weeklyScreenTime = UsageStatsHelper.getWeeklyDailyScreenTime(context)
+            }
             delay(30000)
         }
     }
@@ -99,7 +111,7 @@ fun DashboardScreen(
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(
-                            text = "ANTI-PROCRASTINATION",
+                            text = "UNDRIFT",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -123,7 +135,7 @@ fun DashboardScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Weekly Streak Card
+            // Weekly Screen Time Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = SurfaceColor),
@@ -137,12 +149,17 @@ fun DashboardScreen(
                     ) {
                         Column {
                             Text(
-                                text = "WEEKLY STREAK",
+                                text = "WEEKLY SCREEN TIME",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = TextSecondary
                             )
+                            val avgMillis = weeklyScreenTime.filter { it > 0 }.let {
+                                if (it.isEmpty()) 0L else it.sum() / it.size
+                            }
+                            val avgH = avgMillis / (60 * 60 * 1000)
+                            val avgM = (avgMillis % (60 * 60 * 1000)) / (60 * 1000)
                             Text(
-                                text = "${userProfile.streakCount} Days Success",
+                                text = "Avg ${avgH}h ${avgM}m / day",
                                 style = MaterialTheme.typography.headlineSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
@@ -159,7 +176,7 @@ fun DashboardScreen(
                     }
                     Spacer(modifier = Modifier.height(20.dp))
                     
-                    StreakGraph(history = userProfile.streakHistory)
+                    WeeklyScreenTimeGraph(dailyMillis = weeklyScreenTime)
                 }
             }
 
@@ -414,31 +431,131 @@ fun NumberPicker(value: Int, range: IntRange, label: String, onValueChange: (Int
 }
 
 @Composable
-fun StreakGraph(history: List<Int>) {
-    val data = if (history.isEmpty()) listOf(0, 0, 0, 0, 0, 0, 0) else history
-    val maxValue = data.maxOrNull()?.coerceAtLeast(60) ?: 60
-    
-    Canvas(
+fun WeeklyScreenTimeGraph(dailyMillis: List<Long>) {
+    val data = if (dailyMillis.size < 7) List(7) { dailyMillis.getOrElse(it) { 0L } } else dailyMillis.takeLast(7)
+    // Max is at least 1 hour so the graph always has meaningful scale
+    val maxMillis = (data.maxOrNull()?.coerceAtLeast(3_600_000L) ?: 3_600_000L).toFloat()
+
+    // Build day-of-week labels for the last 7 days
+    val dayLabels = remember {
+        val names = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+        val cal = java.util.Calendar.getInstance()
+        (6 downTo 0).map { daysAgo ->
+            val c = java.util.Calendar.getInstance().apply {
+                timeInMillis = cal.timeInMillis
+                add(java.util.Calendar.DAY_OF_YEAR, -daysAgo)
+            }
+            names[c.get(java.util.Calendar.DAY_OF_WEEK) - 1]
+        }
+    }
+
+    val accentColor = MaterialTheme.colorScheme.primary
+
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(100.dp)
+            .wrapContentHeight()
     ) {
-        val width = size.width
-        val height = size.height
-        val spacing = if (data.size > 1) width / (data.size - 1) else width
-        
-        val path = Path()
-        data.forEachIndexed { index, value ->
-            val x = index * spacing
-            val y = height - (value.toFloat() / maxValue * height)
-            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(220.dp)
+                .background(Color.Black.copy(alpha = 0.1f), shape = RoundedCornerShape(12.dp))
+                .padding(start = 36.dp, end = 12.dp, top = 12.dp, bottom = 12.dp)
+        ) {
+            // Y-axis hour labels drawn as Text overlays
+            val maxHours = (maxMillis / 3_600_000f).let { kotlin.math.ceil(it.toDouble()).toInt().coerceAtLeast(1) }
+            val step = if (maxHours <= 4) 1 else if (maxHours <= 10) 2 else (maxHours / 4).coerceAtLeast(1)
+            val labels = (0..maxHours step step).toList()
+
+            labels.forEach { h ->
+                val fraction = h.toFloat() / maxHours
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .fillMaxHeight()
+                ) {
+                    Text(
+                        text = "${h}h",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.35f),
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .offset(x = (-32).dp)
+                            .offset(y = -(fraction * 196).dp) // rough positioning within 220-24dp area
+                    )
+                }
+            }
+
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight()
+            ) {
+                val canvasWidth = size.width
+                val canvasHeight = size.height
+                val barCount = data.size
+                val barWidthPx = canvasWidth / barCount * 0.55f
+                val gapPx = canvasWidth / barCount
+
+                // Grid lines
+                for (h in labels) {
+                    val y = canvasHeight - (h.toFloat() / maxHours * canvasHeight)
+                    drawLine(
+                        color = Color.White.copy(alpha = 0.06f),
+                        start = Offset(0f, y),
+                        end = Offset(canvasWidth, y),
+                        strokeWidth = 1.dp.toPx()
+                    )
+                }
+
+                // Bars
+                data.forEachIndexed { index, millis ->
+                    val barHeight = (millis / maxMillis) * canvasHeight
+                    val x = index * gapPx + (gapPx - barWidthPx) / 2
+                    // Bar
+                    drawRoundRect(
+                        color = accentColor,
+                        topLeft = Offset(x, canvasHeight - barHeight),
+                        size = androidx.compose.ui.geometry.Size(barWidthPx, barHeight.coerceAtLeast(2.dp.toPx())),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(6.dp.toPx(), 6.dp.toPx())
+                    )
+                    // Hour label above bar
+                    // (drawn as part of the row below instead)
+                }
+            }
         }
-        
-        drawPath(
-            path = path,
-            color = Color(0xFF4CAF50),
-            style = Stroke(width = 4.dp.toPx())
-        )
+
+        // Day labels + hour values
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 6.dp, start = 36.dp, end = 12.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            data.forEachIndexed { index, millis ->
+                val h = millis / 3_600_000
+                val m = (millis % 3_600_000) / 60_000
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = if (h > 0) "${h}h${m}m" else "${m}m",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = accentColor.copy(alpha = 0.8f),
+                        textAlign = TextAlign.Center,
+                        fontSize = 9.sp
+                    )
+                    Text(
+                        text = dayLabels.getOrElse(index) { "" },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.5f),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
     }
 }
 

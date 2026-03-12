@@ -1,8 +1,10 @@
 package com.undrift.utils
 
+import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.util.Log
 import java.util.*
@@ -17,41 +19,106 @@ data class AppUsageInfo(
 object UsageStatsHelper {
     private const val TAG = "UsageStatsHelper"
 
-    /**
-     * Filters for "real" apps that the user actually interacts with.
-     * This avoids the "9hr vs 4.5hr" issue where system components and background 
-     * services inflate the total.
-     */
-    private fun isUserFacingApp(context: Context, packageName: String): Boolean {
-        if (packageName == context.packageName) return false
-        
-        val pm = context.packageManager
-        
-        // Exclude known system packages that don't have a UI but might report foreground time
-        val systemExclusions = listOf(
-            "android",
-            "com.android.systemui",
-            "com.android.settings",
-            "com.google.android.gms",
-            "com.google.android.inputmethod.latin",
-            "com.google.android.apps.nexuslauncher",
-            "com.android.launcher",
-            "com.android.launcher3",
-            "com.sec.android.app.launcher",
-            "com.miui.home"
-        )
-        if (systemExclusions.contains(packageName)) return false
+    private val systemExclusions = setOf(
+        "android",
+        "com.android.systemui",
+        "com.android.settings",
+        "com.android.phone",
+        "com.android.dialer",
+        "com.android.incallui",
+        "com.android.server.telecom",
+        "com.google.android.gms",
+        "com.google.android.gsf",
+        "com.google.android.inputmethod.latin",
+        "com.google.android.apps.nexuslauncher",
+        "com.google.android.packageinstaller",
+        "com.android.launcher",
+        "com.android.launcher3",
+        "com.sec.android.app.launcher",
+        "com.miui.home",
+        "com.android.packageinstaller",
+        "com.android.permissioncontroller",
+        "com.android.shell",
+        "com.android.externalstorage",
+        "com.android.providers.media",
+        "com.android.providers.contacts",
+        "com.android.providers.telephony",
+        "com.android.providers.calendar",
+        "com.android.providers.downloads"
+    )
 
-        // Crucial: Only count apps that can be launched by the user (have an icon in launcher)
-        val launchIntent = pm.getLaunchIntentForPackage(packageName)
-        if (launchIntent == null) return false
+    private fun calculateForegroundTimesFromEvents(
+        usm: UsageStatsManager, startTime: Long, endTime: Long
+    ): Map<String, Long> {
+        val events = usm.queryEvents(startTime, endTime)
+        val event = UsageEvents.Event()
+        val foregroundTimes = mutableMapOf<String, Long>()
+        val lastResumed = mutableMapOf<String, Long>()
 
-        // Exclude the current active launcher/home screen
-        val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-        val resolveInfo = pm.resolveActivity(homeIntent, PackageManager.MATCH_DEFAULT_ONLY)
-        if (resolveInfo?.activityInfo?.packageName == packageName) return false
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            val pkg = event.packageName
+            when (event.eventType) {
+                UsageEvents.Event.ACTIVITY_RESUMED -> {
+                    lastResumed[pkg] = event.timeStamp
+                }
+                UsageEvents.Event.ACTIVITY_PAUSED -> {
+                    val resumeTime = lastResumed.remove(pkg)
+                    if (resumeTime != null && event.timeStamp > resumeTime) {
+                        foregroundTimes[pkg] = (foregroundTimes[pkg] ?: 0L) + (event.timeStamp - resumeTime)
+                    }
+                }
+            }
+        }
 
-        return true
+        for ((pkg, resumeTime) in lastResumed) {
+            if (endTime > resumeTime) {
+                foregroundTimes[pkg] = (foregroundTimes[pkg] ?: 0L) + (endTime - resumeTime)
+            }
+        }
+
+        return foregroundTimes
+    }
+
+    fun getAppUsageToday(context: Context, targetPackage: String): Long {
+        val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val calendar = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val startTime = calendar.timeInMillis
+        val endTime = System.currentTimeMillis()
+
+        val events = usm.queryEvents(startTime, endTime)
+        val event = UsageEvents.Event()
+        var totalTime = 0L
+        var lastResumedTime: Long? = null
+
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            if (event.packageName != targetPackage) continue
+            when (event.eventType) {
+                UsageEvents.Event.ACTIVITY_RESUMED -> {
+                    if (lastResumedTime == null) {
+                        lastResumedTime = event.timeStamp
+                    }
+                }
+                UsageEvents.Event.ACTIVITY_PAUSED -> {
+                    if (lastResumedTime != null) {
+                        totalTime += event.timeStamp - lastResumedTime
+                        lastResumedTime = null
+                    }
+                }
+            }
+        }
+
+        if (lastResumedTime != null) {
+            totalTime += endTime - lastResumedTime
+        }
+
+        return totalTime
     }
 
     fun getAppUsageStats(context: Context): List<AppUsageInfo> {
@@ -66,14 +133,30 @@ object UsageStatsHelper {
         val startTime = calendar.timeInMillis
         val endTime = System.currentTimeMillis()
 
-        // queryAndAggregateUsageStats summarizes by package for the given range
-        val statsMap = usageStatsManager.queryAndAggregateUsageStats(startTime, endTime)
+        val foregroundTimes = calculateForegroundTimesFromEvents(usageStatsManager, startTime, endTime)
         
-        return statsMap.mapNotNull { (packageName, usageStats) ->
-            if (!isUserFacingApp(context, packageName)) return@mapNotNull null
-            
-            val usageTime = usageStats.totalTimeInForeground
-            if (usageTime <= 5000) return@mapNotNull null // Ignore apps used for less than 5 seconds
+        val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        val resolveInfo = packageManager.resolveActivity(homeIntent, PackageManager.MATCH_DEFAULT_ONLY)
+        val currentLauncher = resolveInfo?.activityInfo?.packageName
+
+        return foregroundTimes.mapNotNull { (packageName, usageTime) ->
+            if (systemExclusions.contains(packageName)) return@mapNotNull null
+            if (packageName == context.packageName) return@mapNotNull null
+            if (packageName == currentLauncher) return@mapNotNull null
+            if (usageTime <= 5000) return@mapNotNull null
+
+            val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+            if (launchIntent == null) return@mapNotNull null
+
+            // Filter out pure system apps (not updated by user)
+            try {
+                val appInfo = packageManager.getApplicationInfo(packageName, 0)
+                val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+                val isUpdated = (appInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
+                if (isSystem && !isUpdated) return@mapNotNull null
+            } catch (e: Exception) {
+                return@mapNotNull null
+            }
 
             val appName = try {
                 val appInfo = packageManager.getApplicationInfo(packageName, 0)
@@ -92,26 +175,124 @@ object UsageStatsHelper {
     }
 
     fun getScreenTimeToday(context: Context): Long {
-        // Calculate total only from filtered apps to ensure consistency with the breakdown
         val stats = getAppUsageStats(context)
-        val total = stats.sumOf { it.usageTimeMillis }
-        Log.d(TAG, "Consistent Total: ${total / 60000} mins")
-        return total
+        return stats.sumOf { it.usageTimeMillis }
+    }
+
+    /**
+     * Returns a list of 7 Longs representing total user-app screen time (in millis)
+     * for each of the last 7 days (index 0 = 6 days ago, index 6 = today).
+     */
+    fun getWeeklyDailyScreenTime(context: Context): List<Long> {
+        val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val packageManager = context.packageManager
+
+        val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        val resolveInfo = packageManager.resolveActivity(homeIntent, PackageManager.MATCH_DEFAULT_ONLY)
+        val currentLauncher = resolveInfo?.activityInfo?.packageName
+
+        val result = mutableListOf<Long>()
+        val today = Calendar.getInstance()
+
+        for (daysAgo in 6 downTo 0) {
+            val dayStart = Calendar.getInstance().apply {
+                timeInMillis = today.timeInMillis
+                add(Calendar.DAY_OF_YEAR, -daysAgo)
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            val dayEnd = if (daysAgo == 0) {
+                System.currentTimeMillis()
+            } else {
+                Calendar.getInstance().apply {
+                    timeInMillis = dayStart.timeInMillis
+                    add(Calendar.DAY_OF_YEAR, 1)
+                }.timeInMillis
+            }
+
+            val foregroundTimes = calculateForegroundTimesFromEvents(usm, dayStart.timeInMillis, dayEnd)
+            var dayTotal = 0L
+            for ((pkg, time) in foregroundTimes) {
+                if (systemExclusions.contains(pkg)) continue
+                if (pkg == context.packageName) continue
+                if (pkg == currentLauncher) continue
+                if (time <= 5000) continue
+                val launchIntent = packageManager.getLaunchIntentForPackage(pkg) ?: continue
+                try {
+                    val appInfo = packageManager.getApplicationInfo(pkg, 0)
+                    val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+                    val isUpdated = (appInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
+                    if (isSystem && !isUpdated) continue
+                } catch (_: Exception) { continue }
+                dayTotal += time
+            }
+            result.add(dayTotal)
+        }
+        return result
     }
 
     fun getInstalledApps(context: Context): List<AppUsageInfo> {
         val packageManager = context.packageManager
-        val installedApps = packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
+        // Using queryIntentActivities is generally faster to find launcher apps than getInstalledApplications + getLaunchIntentForPackage
+        val mainIntent = Intent(Intent.ACTION_MAIN, null)
+        mainIntent.addCategory(Intent.CATEGORY_LAUNCHER)
         
-        return installedApps.mapNotNull { appInfo ->
-            if (!isUserFacingApp(context, appInfo.packageName)) return@mapNotNull null
+        val launchables = packageManager.queryIntentActivities(mainIntent, 0)
+        
+        val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        val resolveInfo = packageManager.resolveActivity(homeIntent, PackageManager.MATCH_DEFAULT_ONLY)
+        val currentLauncher = resolveInfo?.activityInfo?.packageName
+
+        return launchables.mapNotNull { resolveInfo ->
+            val packageName = resolveInfo.activityInfo.packageName
+            if (systemExclusions.contains(packageName)) return@mapNotNull null
+            if (packageName == context.packageName) return@mapNotNull null
+            if (packageName == currentLauncher) return@mapNotNull null
 
             AppUsageInfo(
-                packageName = appInfo.packageName,
-                appName = packageManager.getApplicationLabel(appInfo).toString(),
+                packageName = packageName,
+                appName = resolveInfo.loadLabel(packageManager).toString(),
                 usageTimeMillis = 0,
-                icon = try { packageManager.getApplicationIcon(appInfo) } catch (e: Exception) { null }
+                icon = try { resolveInfo.loadIcon(packageManager) } catch (e: Exception) { null }
             )
-        }.sortedBy { it.appName }
+        }.distinctBy { it.packageName }.sortedBy { it.appName }
+    }
+
+    // ─── Demo mode data generators ──────────────────────────────────────
+
+    /**
+     * Seeded-random weekly data averaging 3-5h per day.
+     * Seed is based on the current week so values stay stable within the same week.
+     */
+    fun getDemoWeeklyScreenTime(): List<Long> {
+        val cal = Calendar.getInstance()
+        val weekSeed = cal.get(Calendar.YEAR) * 100 + cal.get(Calendar.WEEK_OF_YEAR)
+        val rng = java.util.Random(weekSeed.toLong())
+        return (0 until 7).map {
+            // 3h to 5h in millis
+            val minMs = 3 * 3_600_000L
+            val rangeMs = 2 * 3_600_000L
+            minMs + (rng.nextDouble() * rangeMs).toLong()
+        }
+    }
+
+    /**
+     * Fake per-app breakdown that totals roughly to today's demo screen time.
+     * Uses the real app list so icons/names look authentic.
+     */
+    fun getDemoAppUsageStats(context: Context): List<AppUsageInfo> {
+        val real = getAppUsageStats(context)
+        if (real.isEmpty()) return real
+
+        val todayTotal = getDemoWeeklyScreenTime().last()
+        val realTotal = real.sumOf { it.usageTimeMillis }.coerceAtLeast(1L)
+        val scale = todayTotal.toDouble() / realTotal
+
+        return real.map { app ->
+            app.copy(usageTimeMillis = (app.usageTimeMillis * scale).toLong().coerceAtLeast(0L))
+        }.filter { it.usageTimeMillis > 30_000 }
+         .sortedByDescending { it.usageTimeMillis }
     }
 }
