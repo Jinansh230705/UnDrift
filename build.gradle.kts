@@ -4,3 +4,13 @@ plugins {
     alias(libs.plugins.kotlin.android) apply false
     alias(libs.plugins.kotlin.compose) apply false
 }
+
+subprojects {
+    plugins.withId("org.jetbrains.kotlin.android") {
+        val kotlinExt = extensions.getByType<org.jetbrains.kotlin.gradle.dsl.KotlinAndroidProjectExtension>()
+        kotlinExt.jvmToolchain {
+            languageVersion.set(JavaLanguageVersion.of(21))
+            vendor.set(JvmVendorSpec.ADOPTIUM)
+        }
+    }
+}

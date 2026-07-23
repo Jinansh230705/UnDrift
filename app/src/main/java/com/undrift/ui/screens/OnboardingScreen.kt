@@ -1,14 +1,15 @@
 package com.undrift.ui.screens
 
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import com.undrift.ui.components.SquircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -18,29 +19,38 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.undrift.ui.theme.UnDriftTheme
+import com.adamglin.PhosphorIcons
+import com.adamglin.phosphoricons.*
+import com.adamglin.phosphoricons.bold.*
+import com.adamglin.phosphoricons.regular.*
+import com.undrift.ui.theme.*
+import com.undrift.ui.components.premiumCard
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-fun SplashScreen(onGetStarted: () -> Unit, onSignInClick: () -> Unit) {
+fun SplashScreen(
+    onGetStarted: () -> Unit,
+    onSignInClick: () -> Unit,
+    animatedVisibilityScope: AnimatedVisibilityScope,
+    sharedTransitionScope: SharedTransitionScope
+) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(DarkBackground)
             .padding(24.dp)
     ) {
-        // Top Icons
+        // Top Info Bar
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             IconButton(onClick = { }) {
-                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White.copy(alpha = 0.6f))
+                Icon(PhosphorIcons.Regular.X, contentDescription = "Close", tint = TextSecondary)
             }
             IconButton(onClick = { }) {
-                Icon(Icons.AutoMirrored.Filled.HelpOutline, contentDescription = "Help", tint = Color.White.copy(alpha = 0.6f))
+                Icon(PhosphorIcons.Regular.Question, contentDescription = "Help", tint = TextSecondary)
             }
         }
 
@@ -48,31 +58,35 @@ fun SplashScreen(onGetStarted: () -> Unit, onSignInClick: () -> Unit) {
             modifier = Modifier.align(Alignment.Center),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // App Logo Placeholder
-            Box(
-                modifier = Modifier
-                    .size(240.dp)
-                    .clip(RoundedCornerShape(48.dp))
-                    .background(MaterialTheme.colorScheme.surface),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Timer,
-                    contentDescription = null,
-                    modifier = Modifier.size(80.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
+            // App Logo Card with Shared Bounds
+            with(sharedTransitionScope) {
+                Box(
+                    modifier = Modifier
+                        .sharedBounds(
+                            sharedContentState = rememberSharedContentState(key = "app_logo_box"),
+                            animatedVisibilityScope = animatedVisibilityScope
+                        )
+                        .size(160.dp)
+                        .premiumCard(cornerRadius = 32.dp, backgroundColor = SurfaceColor, borderColor = BorderColor, padding = 0.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = PhosphorIcons.Bold.Timer,
+                        contentDescription = null,
+                        modifier = Modifier.size(64.dp),
+                        tint = BrandPrimary
+                    )
+                }
             }
 
-            Spacer(modifier = Modifier.height(48.dp))
+            Spacer(modifier = Modifier.height(40.dp))
 
             Text(
                 text = "UnDrift",
                 style = MaterialTheme.typography.headlineLarge.copy(
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 42.sp
+                    fontWeight = FontWeight.Bold
                 ),
-                color = Color.White
+                color = TextPrimary
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -80,52 +94,33 @@ fun SplashScreen(onGetStarted: () -> Unit, onSignInClick: () -> Unit) {
             Text(
                 text = "Calm your mind, reclaim your\nfocus with AI assistance.",
                 style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.secondary,
+                color = TextSecondary,
                 textAlign = TextAlign.Center
             )
 
             Spacer(modifier = Modifier.height(48.dp))
-
-            // Loading state - Now with moving animation
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "Initializing Focus Agents...",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-                LinearProgressIndicator(
-                    modifier = Modifier
-                        .fillMaxWidth(0.8f)
-                        .height(6.dp)
-                        .clip(CircleShape),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surface
-                )
-            }
-
-            Spacer(modifier = Modifier.height(32.dp))
 
             Button(
                 onClick = onGetStarted,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                shape = RoundedCornerShape(12.dp)
+                shape = SquircleShape(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = BrandPrimary,
+                    contentColor = DarkBackground
+                )
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Get Started", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
-                }
+                Text("Get Started", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
             }
 
-            TextButton(onClick = onSignInClick) {
-                Text("Sign In", color = Color.White)
+            Spacer(modifier = Modifier.height(16.dp))
+
+            TextButton(
+                onClick = onSignInClick,
+                colors = ButtonDefaults.textButtonColors(contentColor = TextSecondary)
+            ) {
+                Text("Sign In", style = MaterialTheme.typography.bodyLarge)
             }
         }
 
@@ -133,7 +128,7 @@ fun SplashScreen(onGetStarted: () -> Unit, onSignInClick: () -> Unit) {
         Text(
             text = "By joining, you agree to our Terms and Privacy Policy.\nYour focus data stays private and encrypted.",
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.7f),
+            color = TextSecondary,
             textAlign = TextAlign.Center,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -142,75 +137,94 @@ fun SplashScreen(onGetStarted: () -> Unit, onSignInClick: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-fun OnboardingAgentsScreen(onGetStarted: () -> Unit) {
+fun OnboardingAgentsScreen(
+    onGetStarted: () -> Unit,
+    animatedVisibilityScope: AnimatedVisibilityScope,
+    sharedTransitionScope: SharedTransitionScope
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(DarkBackground)
             .padding(24.dp)
     ) {
-        Box(modifier = Modifier.fillMaxWidth()) {
-            IconButton(onClick = { }) {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Back", tint = Color.White)
+        // Minimal Top Bar
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+        ) {
+            IconButton(
+                onClick = { },
+                modifier = Modifier.align(Alignment.CenterStart)
+            ) {
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Back", tint = TextSecondary)
             }
             Text(
                 text = "ONBOARDING",
                 modifier = Modifier.align(Alignment.Center),
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.secondary,
-                letterSpacing = 2.sp
+                color = TextSecondary
             )
         }
 
-        Spacer(modifier = Modifier.height(48.dp))
+        Spacer(modifier = Modifier.height(32.dp))
 
         Text(
-            text = "AI Powered",
+            text = "AI Powered Focus",
             modifier = Modifier.fillMaxWidth(),
-            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+            style = MaterialTheme.typography.headlineLarge,
             textAlign = TextAlign.Center,
-            color = Color.White
+            color = TextPrimary
         )
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         Text(
             text = "Three specialized agents designed\nto crush procrastination and boost\nfocus.",
-            modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+            modifier = Modifier.fillMaxWidth(),
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.secondary
+            color = TextSecondary
         )
 
         Spacer(modifier = Modifier.height(48.dp))
 
-        AgentItem(
-            icon = Icons.Default.Psychology,
-            title = "Context-Aware Agent",
-            description = "Monitors your environment to send reminders only when they matter most."
-        )
+        // Agent Items
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            AgentItem(
+                icon = PhosphorIcons.Bold.Brain,
+                title = "Context-Aware Agent",
+                description = "Monitors your environment to send reminders only when they matter most."
+            )
 
-        Spacer(modifier = Modifier.height(32.dp))
+            AgentItem(
+                icon = PhosphorIcons.Bold.GameController,
+                title = "Reward Loop Agent",
+                description = "Gamifies focus. Earn coins and unlock badges for every minute of deep work."
+            )
 
-        AgentItem(
-            icon = Icons.Default.Casino,
-            title = "Reward Loop Agent",
-            description = "Gamifies focus. Earn coins and unlock badges for every minute of deep work."
-        )
-
-        Spacer(modifier = Modifier.height(32.dp))
-
-        AgentItem(
-            icon = Icons.Default.RemoveCircleOutline,
-            title = "Minimal Intervention Agent",
-            description = "Quietly operates in the background with gentle haptic feedback."
-        )
-
-        Spacer(modifier = Modifier.weight(1f))
+            AgentItem(
+                icon = PhosphorIcons.Bold.HandPalm,
+                title = "Minimal Intervention Agent",
+                description = "Quietly operates in the background with gentle haptic feedback."
+            )
+        }
 
         // Page Indicator
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 24.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
         ) {
             repeat(3) { index ->
                 Box(
@@ -218,54 +232,69 @@ fun OnboardingAgentsScreen(onGetStarted: () -> Unit) {
                         .padding(horizontal = 4.dp)
                         .size(if (index == 2) 8.dp else 6.dp)
                         .clip(CircleShape)
-                        .background(if (index == 2) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface)
+                        .background(
+                            if (index == 2) BrandPrimary else SurfaceVariantColor
+                        )
                 )
             }
         }
-
-        Spacer(modifier = Modifier.height(32.dp))
 
         Button(
             onClick = onGetStarted,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-            shape = RoundedCornerShape(12.dp)
+            shape = SquircleShape(),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = BrandPrimary,
+                contentColor = DarkBackground
+            )
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Get Started", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(modifier = Modifier.width(8.dp))
-                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
-            }
+            Text("Begin Journey", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
         }
     }
 }
 
 @Composable
-fun AgentItem(icon: ImageVector, title: String, description: String) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally
+fun AgentItem(
+    icon: ImageVector,
+    title: String,
+    description: String
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .premiumCard(cornerRadius = 24.dp, padding = 16.dp, backgroundColor = SurfaceVariantColor),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            modifier = Modifier.size(32.dp),
-            tint = MaterialTheme.colorScheme.primary
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-            color = Color.White
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = description,
-            style = MaterialTheme.typography.bodyMedium,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.secondary
-        )
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(SquircleShape())
+                .background(SurfaceColor)
+                .border(1.dp, BorderColor, SquircleShape()),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+                tint = BrandPrimary
+            )
+        }
+        Spacer(modifier = Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
+                color = TextPrimary
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextSecondary
+            )
+        }
     }
 }

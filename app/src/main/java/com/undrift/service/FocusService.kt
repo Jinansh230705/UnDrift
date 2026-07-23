@@ -20,7 +20,10 @@ import androidx.core.app.NotificationCompat
 import com.undrift.MainActivity
 import com.undrift.data.MongoRepository
 import com.undrift.data.UserPreferences
+import com.undrift.data.UserProfile
 import com.undrift.utils.UsageStatsHelper
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import java.util.*
@@ -35,6 +38,20 @@ class FocusService : Service() {
     private var focusStartTime = 0L
     private var monitoringJob: Job? = null
     
+    @Volatile
+    private var currentUserProfile: UserProfile? = null
+    @Volatile
+    private var isScreenOn = true
+
+    private val screenStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                Intent.ACTION_SCREEN_OFF -> isScreenOn = false
+                Intent.ACTION_SCREEN_ON -> isScreenOn = true
+            }
+        }
+    }
+    
     private val notificationTimestamps = mutableMapOf<String, Long>()
 
     // Overlay state
@@ -44,6 +61,9 @@ class FocusService : Service() {
 
     // Temporary app allowances (package -> expiry millis)
     private val tempAllowedApps = mutableMapOf<String, Long>()
+    
+    // Time when the user last clicked "Back to Focus"
+    private var lastHomeActionTime = 0L
 
     companion object {
         private const val TAG = "FocusService"
@@ -54,7 +74,28 @@ class FocusService : Service() {
         userPreferences = UserPreferences(this)
         createNotificationChannel()
         val notification = createNotification("UnDrift Active", "Monitoring app usage")
-        startForeground(1, notification)
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(1, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            startForeground(1, notification)
+        }
+
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(screenStateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(screenStateReceiver, filter)
+        }
+
+        serviceScope.launch {
+            userPreferences.userProfileFlow.collect { profile ->
+                currentUserProfile = profile
+            }
+        }
+
         startBackgroundMonitoring()
     }
 
@@ -62,7 +103,9 @@ class FocusService : Service() {
         serviceScope.launch {
             while (true) {
                 try {
-                    checkForegroundAndBlock()
+                    if (isScreenOn && currentUserProfile != null) {
+                        checkForegroundAndBlock()
+                    }
                 } catch (e: Exception) {
                     Log.e(TAG, "Monitor error: ${e.message}")
                 }
@@ -89,7 +132,11 @@ class FocusService : Service() {
         focusEndTime = System.currentTimeMillis() + (durationSeconds * 1000L)
         
         val notification = createNotification("Focus Mode Active", "Stay away from distractions!")
-        startForeground(1, notification)
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(1, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            startForeground(1, notification)
+        }
         
         monitoringJob?.cancel()
         monitoringJob = serviceScope.launch {
@@ -120,7 +167,7 @@ class FocusService : Service() {
     }
 
     private suspend fun completeFocusSession() {
-        val profile = userPreferences.userProfileFlow.first()
+        val profile = currentUserProfile ?: userPreferences.userProfileFlow.first()
 
         val todayStart = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 0)
@@ -158,7 +205,13 @@ class FocusService : Service() {
 
     // ─── Core monitoring logic ───────────────────────────────────────────
 
+    private var currentForegroundPkg: String? = null
+    private var currentForegroundUsageToday: Long = 0L
+
     private suspend fun checkForegroundAndBlock() {
+        // Pause checking for 10 seconds if we just went home, allowing UsageStats to catch up
+        if (System.currentTimeMillis() - lastHomeActionTime < 10000) return
+        
         // Overlay is active → don't interfere, user must dismiss manually
         if (overlayView != null) return
 
@@ -172,7 +225,14 @@ class FocusService : Service() {
             else tempAllowedApps.remove(foregroundPkg)
         }
 
-        val profile = userPreferences.userProfileFlow.first()
+        val profile = currentUserProfile ?: return
+
+        // 0. AI Context Check - Bypass if doing something important
+        val currentContext = ContextAwareAgentService.currentContext.value
+        if (currentContext == UserContext.IMPORTANT_TASK) {
+            Log.d(TAG, "AI Agent: User is performing an important task in $foregroundPkg. Bypassing block.")
+            return
+        }
 
         // 1. Focus Mode strict block
         if (isFocusModeActive && profile.blockedApps.contains(foregroundPkg)) {
@@ -183,15 +243,23 @@ class FocusService : Service() {
         // 2. App time limit exceeded
         val limit = profile.appLimits[foregroundPkg]
         if (limit != null && limit > 0) {
-            val usageToday = UsageStatsHelper.getAppUsageToday(this, foregroundPkg)
-            Log.d(TAG, "Usage check: $foregroundPkg used ${usageToday/1000}s, limit ${limit/1000}s")
+            if (foregroundPkg != currentForegroundPkg) {
+                currentForegroundPkg = foregroundPkg
+                currentForegroundUsageToday = UsageStatsHelper.getAppUsageToday(this, foregroundPkg)
+            } else {
+                currentForegroundUsageToday += 1000L // Add 1 second for each polling interval
+            }
 
-            if (usageToday >= limit) {
+            Log.d(TAG, "Usage check: $foregroundPkg used ${currentForegroundUsageToday/1000}s, limit ${limit/1000}s")
+
+            if (currentForegroundUsageToday >= limit) {
                 showOverlay(foregroundPkg, "LIMIT_EXCEEDED", profile.points)
                 return
-            } else if (limit - usageToday <= 60_000) {
-                showWarningNotification(foregroundPkg, (limit - usageToday) / 1000)
+            } else if (limit - currentForegroundUsageToday <= 60_000) {
+                showWarningNotification(foregroundPkg, (limit - currentForegroundUsageToday) / 1000)
             }
+        } else {
+            currentForegroundPkg = foregroundPkg
         }
     }
 
@@ -216,19 +284,19 @@ class FocusService : Service() {
     // ─── WindowManager overlay (the actual blocking UI) ──────────────────
 
     private fun showOverlay(blockedPkg: String, reason: String, userPoints: Int = 0) {
-        // Already showing for this package
-        if (overlayView != null && overlayBlockedPackage == blockedPkg) return
-
         if (!Settings.canDrawOverlays(this)) {
             Log.e(TAG, "No SYSTEM_ALERT_WINDOW permission – falling back to notification")
             showFallbackNotification(blockedPkg, reason)
             return
         }
 
-        // Dismiss any previous overlay first
-        dismissOverlay()
-
         mainHandler.post {
+            // Already showing for this package
+            if (overlayView != null && overlayBlockedPackage == blockedPkg) return@post
+
+            // Dismiss any previous overlay first
+            dismissOverlaySync()
+
             try {
                 val wm = getSystemService(WINDOW_SERVICE) as WindowManager
                 val params = WindowManager.LayoutParams(
@@ -252,20 +320,23 @@ class FocusService : Service() {
         }
     }
 
-    private fun dismissOverlay() {
-        if (overlayView == null) return
-        mainHandler.post {
-            try {
-                overlayView?.let {
-                    val wm = getSystemService(WINDOW_SERVICE) as WindowManager
-                    wm.removeView(it)
-                    Log.d(TAG, "Overlay dismissed")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to remove overlay: ${e.message}")
+    private fun dismissOverlaySync() {
+        try {
+            overlayView?.let {
+                val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+                wm.removeView(it)
+                Log.d(TAG, "Overlay dismissed")
             }
-            overlayView = null
-            overlayBlockedPackage = null
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to remove overlay: ${e.message}")
+        }
+        overlayView = null
+        overlayBlockedPackage = null
+    }
+
+    private fun dismissOverlay() {
+        mainHandler.post {
+            dismissOverlaySync()
         }
     }
 
@@ -425,12 +496,17 @@ class FocusService : Service() {
             setOnClickListener {
                 // Award 15 focus points for returning
                 serviceScope.launch { userPreferences.updatePoints(15) }
+                lastHomeActionTime = System.currentTimeMillis()
                 dismissOverlay()
-                val homeIntent = Intent(Intent.ACTION_MAIN).apply {
-                    addCategory(Intent.CATEGORY_HOME)
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                try {
+                    val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+                        addCategory(Intent.CATEGORY_HOME)
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    startActivity(homeIntent)
+                } catch (e: Exception) {
+                    Toast.makeText(ctx, "Please press your home button to exit.", Toast.LENGTH_LONG).show()
                 }
-                startActivity(homeIntent)
             }
         }
         sheet.addView(backBtn)
@@ -438,7 +514,7 @@ class FocusService : Service() {
         // "I need 20 min" button (light/cream, rounded)
         val hasEnoughCoins = userPoints >= 300
         val extraBtn = Button(ctx).apply {
-            text = "I need 20 min"
+            text = if (hasEnoughCoins) "I need 20 min" else "Not enough points (need 300)"
             textSize = 16f
             isAllCaps = false
             typeface = Typeface.DEFAULT_BOLD
@@ -448,13 +524,16 @@ class FocusService : Service() {
                 cornerRadius = dpf(16f)
             }
             background = bg
-            isEnabled = hasEnoughCoins
             setPadding(dp(16), dp(16), dp(16), dp(16))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(56)
             ).apply { bottomMargin = dp(20) }
             setOnClickListener {
-                grantTempAccess(blockedPkg, 20)
+                if (hasEnoughCoins) {
+                    grantTempAccess(blockedPkg, 20)
+                } else {
+                    Toast.makeText(ctx, "Not enough points! You need 300 \uD83E\uDE99.", Toast.LENGTH_SHORT).show()
+                }
             }
         }
         sheet.addView(extraBtn)
@@ -583,6 +662,7 @@ class FocusService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        unregisterReceiver(screenStateReceiver)
         dismissOverlay()
         serviceScope.cancel()
         super.onDestroy()

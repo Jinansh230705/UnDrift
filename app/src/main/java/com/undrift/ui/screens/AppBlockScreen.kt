@@ -1,41 +1,49 @@
 package com.undrift.ui.screens
 
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import com.undrift.ui.components.SquircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.core.graphics.drawable.toBitmap
+import com.adamglin.PhosphorIcons
+import com.adamglin.phosphoricons.*
+import com.adamglin.phosphoricons.bold.*
+import com.adamglin.phosphoricons.regular.*
 import com.undrift.data.UserPreferences
-import com.undrift.ui.theme.SurfaceColor
-import com.undrift.ui.theme.TextSecondary
+import com.undrift.ui.theme.*
 import com.undrift.utils.AppUsageInfo
 import com.undrift.utils.UsageStatsHelper
+import com.undrift.ui.components.premiumCard
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun AppBlockScreen(
     onBack: () -> Unit,
-    userPreferences: UserPreferences
+    userPreferences: UserPreferences,
+    animatedVisibilityScope: AnimatedVisibilityScope,
+    sharedTransitionScope: SharedTransitionScope
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -48,7 +56,9 @@ fun AppBlockScreen(
     var selectedAppForLimit by remember { mutableStateOf<AppUsageInfo?>(null) }
 
     LaunchedEffect(Unit) {
-        installedApps = UsageStatsHelper.getInstalledApps(context)
+        installedApps = withContext(Dispatchers.IO) {
+            UsageStatsHelper.getInstalledApps(context)
+        }
         val profile = userPreferences.userProfileFlow.first()
         blockedApps = profile.blockedApps
         appLimits = profile.appLimits
@@ -59,132 +69,149 @@ fun AppBlockScreen(
         it.appName.contains(searchQuery, ignoreCase = true) 
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 20.dp)
-    ) {
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        // Header
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Back", tint = MaterialTheme.colorScheme.primary)
-                }
-                Text("Focus", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
-            }
-            Text("App Controls", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
-            TextButton(onClick = onBack) {
-                Text("Done", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Search Bar
-        TextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
+    Scaffold(
+        containerColor = DarkBackground
+    ) { paddingValues ->
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp)),
-            placeholder = { Text("Search apps", color = TextSecondary) },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = TextSecondary) },
-            colors = TextFieldDefaults.colors(
-                focusedContainerColor = SurfaceColor,
-                unfocusedContainerColor = SurfaceColor,
-                focusedIndicatorColor = Color.Transparent,
-                unfocusedIndicatorColor = Color.Transparent,
-                cursorColor = MaterialTheme.colorScheme.primary
-            )
-        )
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        if (isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-        } else {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                item {
-                    // AI Suggestion Box
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = SurfaceColor),
-                        shape = RoundedCornerShape(16.dp)
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(horizontal = 24.dp)
+                .animateContentSize()
+        ) {
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // Header Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .premiumCard(cornerRadius = 16.dp, padding = 0.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.padding(16.dp),
-                            verticalAlignment = Alignment.Top
-                        ) {
-                            Icon(
-                                Icons.Default.AutoAwesome,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text(
-                                    "AI Focus Agent Suggestion",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
-                                Text(
-                                    "Blocked apps are strictly restricted during Focus sessions. Limits apply daily.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = TextSecondary
-                                )
-                            }
-                        }
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Back", tint = TextPrimary, modifier = Modifier.size(24.dp))
                     }
-                    Spacer(modifier = Modifier.height(24.dp))
-                    Text(
-                        "INSTALLED APPS",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = TextSecondary,
-                        modifier = Modifier.padding(bottom = 12.dp)
-                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text("App Controls", style = MaterialTheme.typography.titleLarge, color = TextPrimary)
                 }
+                TextButton(onClick = onBack) {
+                    Text("Done", color = BrandPrimary, fontWeight = FontWeight.Bold)
+                }
+            }
 
-                items(filteredApps) { app ->
-                    val isBlocked = blockedApps.contains(app.packageName)
-                    val limitMillis = appLimits[app.packageName] ?: 0L
-                    
-                    AppItem(
-                        app = app,
-                        isBlocked = isBlocked,
-                        limitMillis = limitMillis,
-                        onToggleBlock = { blocked ->
-                            scope.launch {
-                                if (blocked) {
-                                    userPreferences.addBlockedApp(app.packageName)
-                                    blockedApps = blockedApps + app.packageName
-                                } else {
-                                    val newBlocked = blockedApps - app.packageName
-                                    val profile = userPreferences.userProfileFlow.first()
-                                    userPreferences.saveUserProfile(profile.copy(blockedApps = newBlocked))
-                                    blockedApps = newBlocked
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // Search Bar
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Search apps", color = TextSecondary) },
+                leadingIcon = { Icon(PhosphorIcons.Regular.MagnifyingGlass, contentDescription = null, tint = TextSecondary) },
+                shape = SquircleShape(),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = BrandPrimary,
+                    unfocusedBorderColor = BorderColor,
+                    focusedContainerColor = SurfaceColor,
+                    unfocusedContainerColor = SurfaceColor,
+                    unfocusedTextColor = TextPrimary,
+                    focusedTextColor = TextPrimary
+                ),
+                singleLine = true
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            if (isLoading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = BrandPrimary, strokeWidth = 3.dp)
+                }
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    item {
+                        // Info Box
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .premiumCard()
+                        ) {
+                            Row(verticalAlignment = Alignment.Top) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(SquircleShape())
+                                        .background(SurfaceVariantColor),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        PhosphorIcons.Bold.Sparkle,
+                                        contentDescription = null,
+                                        tint = BrandPrimary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Column {
+                                    Text(
+                                        "Focus Agent Rule",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextPrimary
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        "Blocked apps are strictly restricted during sessions. Limits apply daily outside sessions.",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = TextSecondary
+                                    )
                                 }
                             }
-                        },
-                        onSetLimit = {
-                            selectedAppForLimit = app
                         }
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-                
-                item {
-                    Spacer(modifier = Modifier.height(100.dp))
+                        Spacer(modifier = Modifier.height(32.dp))
+                        Text(
+                            "INSTALLED APPS",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = TextSecondary,
+                            modifier = Modifier.padding(bottom = 16.dp)
+                        )
+                    }
+
+                    items(filteredApps, key = { it.packageName }) { app ->
+                        val isBlocked = blockedApps.contains(app.packageName)
+                        val limitMillis = appLimits[app.packageName] ?: 0L
+                        
+                        AppItem(
+                            app = app,
+                            isBlocked = isBlocked,
+                            limitMillis = limitMillis,
+                            onToggleBlock = { blocked ->
+                                scope.launch {
+                                    if (blocked) {
+                                        userPreferences.addBlockedApp(app.packageName)
+                                        blockedApps = blockedApps + app.packageName
+                                    } else {
+                                        val newBlocked = blockedApps - app.packageName
+                                        val profile = userPreferences.userProfileFlow.first()
+                                        userPreferences.saveUserProfile(profile.copy(blockedApps = newBlocked))
+                                        blockedApps = newBlocked
+                                    }
+                                }
+                            },
+                            onSetLimit = {
+                                selectedAppForLimit = app
+                            }
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+                    
+                    item {
+                        Spacer(modifier = Modifier.height(100.dp))
+                    }
                 }
             }
         }
@@ -194,16 +221,24 @@ fun AppBlockScreen(
         var limitInput by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { selectedAppForLimit = null },
-            title = { Text("Set Daily Limit for ${selectedAppForLimit?.appName}") },
+            containerColor = SurfaceColor,
+            title = { Text("Daily Limit", color = TextPrimary, style = MaterialTheme.typography.titleLarge) },
             text = {
                 Column {
-                    Text("Enter limit in minutes (0 to remove limit)", style = MaterialTheme.typography.bodySmall)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    TextField(
+                    Text("Enter limit in minutes (0 to remove limit) for ${selectedAppForLimit?.appName}", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    OutlinedTextField(
                         value = limitInput,
                         onValueChange = { if (it.all { c -> c.isDigit() }) limitInput = it },
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
-                        label = { Text("Minutes") }
+                        label = { Text("Minutes", color = TextSecondary) },
+                        shape = SquircleShape(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = BrandPrimary,
+                            unfocusedBorderColor = BorderColor,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        )
                     )
                 }
             },
@@ -217,12 +252,12 @@ fun AppBlockScreen(
                         selectedAppForLimit = null
                     }
                 }) {
-                    Text("Save")
+                    Text("Save", color = BrandPrimary, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { selectedAppForLimit = null }) {
-                    Text("Cancel")
+                    Text("Cancel", color = TextSecondary)
                 }
             }
         )
@@ -237,46 +272,63 @@ fun AppItem(
     onToggleBlock: (Boolean) -> Unit,
     onSetLimit: () -> Unit
 ) {
-    Row(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .premiumCard(padding = 16.dp, backgroundColor = SurfaceVariantColor, cornerRadius = 16.dp)
+            .clickable { onToggleBlock(!isBlocked) }
     ) {
-        Checkbox(
-            checked = isBlocked,
-            onCheckedChange = onToggleBlock,
-            colors = CheckboxDefaults.colors(
-                checkedColor = MaterialTheme.colorScheme.primary,
-                uncheckedColor = TextSecondary
-            )
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        app.icon?.let { icon ->
-            Image(
-                bitmap = icon.toBitmap().asImageBitmap(),
-                contentDescription = null,
-                modifier = Modifier.size(40.dp)
-            )
-            Spacer(modifier = Modifier.width(12.dp))
-        }
-        Column(modifier = Modifier.weight(1f)) {
-            Text(app.appName, style = MaterialTheme.typography.titleSmall, color = Color.White)
-            if (limitMillis > 0) {
-                Text(
-                    "Limit: ${limitMillis / (60 * 1000)} mins", 
-                    style = MaterialTheme.typography.labelSmall, 
-                    color = MaterialTheme.colorScheme.primary
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            app.iconBitmap?.let { bmp ->
+                Image(
+                    bitmap = bmp,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(SquircleShape())
                 )
-            } else {
-                Text(app.packageName, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                Spacer(modifier = Modifier.width(16.dp))
             }
-        }
-        IconButton(onClick = onSetLimit) {
-            Icon(
-                Icons.Default.Timer, 
-                contentDescription = "Set Limit", 
-                tint = if (limitMillis > 0) MaterialTheme.colorScheme.primary else TextSecondary
+            Column(modifier = Modifier.weight(1f)) {
+                Text(app.appName, style = MaterialTheme.typography.bodyLarge, color = TextPrimary, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(4.dp))
+                if (limitMillis > 0) {
+                    Text(
+                        "Limit: ${limitMillis / (60 * 1000)} mins", 
+                        style = MaterialTheme.typography.bodyMedium, 
+                        color = BrandSecondary
+                    )
+                } else {
+                    Text(app.packageName, style = MaterialTheme.typography.bodyMedium, color = TextSecondary, maxLines = 1)
+                }
+            }
+            IconButton(
+                onClick = onSetLimit,
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(SquircleShape())
+                    .background(SurfaceColor)
+            ) {
+                Icon(
+                    PhosphorIcons.Regular.Timer, 
+                    contentDescription = "Set Limit", 
+                    tint = if (limitMillis > 0) BrandSecondary else TextSecondary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Switch(
+                checked = isBlocked,
+                onCheckedChange = onToggleBlock,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = DarkBackground,
+                    checkedTrackColor = BrandPrimary,
+                    uncheckedThumbColor = TextSecondary,
+                    uncheckedTrackColor = SurfaceColor
+                )
             )
         }
     }

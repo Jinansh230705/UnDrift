@@ -2,14 +2,20 @@ package com.undrift.ui.screens
 
 import android.content.Context
 import android.content.Intent
+import android.provider.Settings
+import android.accessibilityservice.AccessibilityService
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import com.undrift.ui.components.SquircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -19,37 +25,56 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import androidx.core.graphics.drawable.toBitmap
+import com.adamglin.PhosphorIcons
+import com.adamglin.phosphoricons.*
+import com.adamglin.phosphoricons.bold.*
+import com.adamglin.phosphoricons.regular.*
 import com.undrift.data.UserPreferences
 import com.undrift.data.UserProfile
 import com.undrift.service.FocusService
-import com.undrift.ui.theme.SurfaceColor
-import com.undrift.ui.theme.TextSecondary
+import com.undrift.service.ContextAwareAgentService
+import com.undrift.ui.theme.*
 import com.undrift.utils.AppUsageInfo
+import com.undrift.utils.MotivationHelper
 import com.undrift.utils.UsageStatsHelper
+import com.undrift.ui.components.premiumCard
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
+fun isAccessibilityServiceEnabled(context: Context, service: Class<out AccessibilityService>): Boolean {
+    val enabledServices = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
+    val colonSplitter = android.text.TextUtils.SimpleStringSplitter(':')
+    colonSplitter.setString(enabledServices)
+    while (colonSplitter.hasNext()) {
+        val componentNameString = colonSplitter.next()
+        val componentName = android.content.ComponentName.unflattenFromString(componentNameString)
+        if (componentName != null && componentName.packageName == context.packageName && componentName.className == service.name) {
+            return true
+        }
+    }
+    return false
+}
+
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun DashboardScreen(
     userProfile: UserProfile,
     userPreferences: UserPreferences,
     onProfileClick: () -> Unit,
     onAddClick: () -> Unit,
-    onRewardsClick: () -> Unit
+    onRewardsClick: () -> Unit,
+    animatedVisibilityScope: AnimatedVisibilityScope,
+    sharedTransitionScope: SharedTransitionScope
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -58,90 +83,129 @@ fun DashboardScreen(
     var appUsageList by remember { mutableStateOf(listOf<AppUsageInfo>()) }
     var weeklyScreenTime by remember { mutableStateOf(List(7) { 0L }) }
     var showDurationDialog by remember { mutableStateOf(false) }
+    var isAccessibilityEnabled by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit, userProfile.demoMode) {
         while (true) {
-            if (userProfile.demoMode) {
-                val demoWeekly = UsageStatsHelper.getDemoWeeklyScreenTime()
-                weeklyScreenTime = demoWeekly
-                screenTimeToday = demoWeekly.last()
-                appUsageList = UsageStatsHelper.getDemoAppUsageStats(context)
-            } else {
-                screenTimeToday = UsageStatsHelper.getScreenTimeToday(context)
-                appUsageList = UsageStatsHelper.getAppUsageStats(context)
-                weeklyScreenTime = UsageStatsHelper.getWeeklyDailyScreenTime(context)
+            isAccessibilityEnabled = isAccessibilityServiceEnabled(context, ContextAwareAgentService::class.java)
+            
+            val (newWeekly, newToday, newApps) = withContext(Dispatchers.IO) {
+                if (userProfile.demoMode) {
+                    val demoWeekly = UsageStatsHelper.getDemoWeeklyScreenTime()
+                    Triple(demoWeekly, demoWeekly.last(), UsageStatsHelper.getDemoAppUsageStats(context))
+                } else {
+                    Triple(
+                        UsageStatsHelper.getWeeklyDailyScreenTime(context),
+                        UsageStatsHelper.getScreenTimeToday(context),
+                        UsageStatsHelper.getAppUsageStats(context)
+                    )
+                }
             }
-            delay(30000)
+            weeklyScreenTime = newWeekly
+            screenTimeToday = newToday
+            appUsageList = newApps
+            delay(60000)
         }
     }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background
+        containerColor = DarkBackground
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(horizontal = 20.dp)
+                .padding(horizontal = 24.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(24.dp))
             
-            // Header
+            // Header Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
-                            .clickable { onProfileClick() },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = if (userProfile.name.isNotEmpty()) userProfile.name.take(1).uppercase() else "U",
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold
-                        )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable { onProfileClick() }
+                ) {
+                    with(sharedTransitionScope) {
+                        Box(
+                            modifier = Modifier
+                                .sharedBounds(
+                                    sharedContentState = rememberSharedContentState(key = "profile_avatar"),
+                                    animatedVisibilityScope = animatedVisibilityScope
+                                )
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(SurfaceColor)
+                                .border(1.dp, BorderColor, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (userProfile.name.isNotEmpty()) userProfile.name.take(1).uppercase() else "U",
+                                color = BrandPrimary,
+                                style = MaterialTheme.typography.titleLarge
+                            )
+                        }
                     }
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(16.dp))
                     Column {
                         Text(
-                            text = "UNDRIFT",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
+                            text = MotivationHelper.getTimeBasedGreeting(),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextSecondary
                         )
                         Text(
                             text = userProfile.name.ifEmpty { "User" },
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            style = MaterialTheme.typography.titleLarge,
+                            color = TextPrimary
                         )
                     }
                 }
-                Row {
-                    IconButton(onClick = { }) {
-                        Icon(Icons.Default.Notifications, contentDescription = "Notifications", tint = Color.White)
-                    }
-                    IconButton(onClick = { onRewardsClick() }) {
-                        Icon(Icons.Default.Stars, contentDescription = "Rewards", tint = Color.White)
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    IconButton(
+                        onClick = onRewardsClick,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(SurfaceColor)
+                            .border(1.dp, BorderColor, CircleShape)
+                    ) {
+                        Icon(PhosphorIcons.Bold.Star, contentDescription = "Rewards", tint = BrandPrimary, modifier = Modifier.size(24.dp))
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            if (!isAccessibilityEnabled) {
+                Spacer(modifier = Modifier.height(24.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .premiumCard(backgroundColor = Color(0xFF1E1010), borderColor = Color(0xFF3D1A1A))
+                        .clickable { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(PhosphorIcons.Bold.Warning, contentDescription = null, tint = Color(0xFFFF453A), modifier = Modifier.size(24.dp))
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Enable AI Agent", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text("Required for intelligent task bypassing.", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                        }
+                    }
+                }
+            }
 
-            // Weekly Screen Time Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = SurfaceColor),
-                shape = RoundedCornerShape(24.dp)
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // Focus Mode Session Card
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .premiumCard()
             ) {
-                Column(modifier = Modifier.padding(20.dp)) {
+                Column {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -149,64 +213,14 @@ fun DashboardScreen(
                     ) {
                         Column {
                             Text(
-                                text = "WEEKLY SCREEN TIME",
-                                style = MaterialTheme.typography.labelMedium,
+                                text = "Focus Session",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = if (isFocusModeActive) "Deep Work Active" else "Select duration to begin",
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = TextSecondary
-                            )
-                            val avgMillis = weeklyScreenTime.filter { it > 0 }.let {
-                                if (it.isEmpty()) 0L else it.sum() / it.size
-                            }
-                            val avgH = avgMillis / (60 * 60 * 1000)
-                            val avgM = (avgMillis % (60 * 60 * 1000)) / (60 * 1000)
-                            Text(
-                                text = "Avg ${avgH}h ${avgM}m / day",
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                        }
-                        IconButton(
-                            onClick = { },
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f))
-                        ) {
-                            Icon(Icons.Default.ShowChart, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(20.dp))
-                    
-                    WeeklyScreenTimeGraph(dailyMillis = weeklyScreenTime)
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Focus Mode Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (isFocusModeActive) MaterialTheme.colorScheme.primary else SurfaceColor
-                ),
-                shape = RoundedCornerShape(24.dp)
-            ) {
-                Column(modifier = Modifier.padding(20.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(
-                                text = "Focus Mode",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                            Text(
-                                text = if (isFocusModeActive) "Deep Work Active" else "Set duration to start",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.7f)
                             )
                         }
                         Switch(
@@ -224,13 +238,15 @@ fun DashboardScreen(
                                 }
                             },
                             colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color.White,
-                                checkedTrackColor = Color.White.copy(alpha = 0.4f)
+                                checkedThumbColor = DarkBackground,
+                                checkedTrackColor = BrandPrimary,
+                                uncheckedThumbColor = TextSecondary,
+                                uncheckedTrackColor = SurfaceVariantColor
                             )
                         )
                     }
                     
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(24.dp))
                     
                     val hr = userProfile.focusDurationMinutes / 3600
                     val min = (userProfile.focusDurationMinutes % 3600) / 60
@@ -239,118 +255,162 @@ fun DashboardScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Color.Black.copy(alpha = 0.2f))
+                            .clip(SquircleShape())
+                            .background(SurfaceVariantColor)
                             .clickable { showDurationDialog = true }
                             .padding(16.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Timer, contentDescription = null, tint = Color.White)
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Icon(PhosphorIcons.Bold.Timer, contentDescription = null, tint = BrandSecondary, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
                             Text(
                                 text = String.format("%02dh %02dm %02ds", hr, min, sec),
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                style = MaterialTheme.typography.titleLarge,
+                                color = TextPrimary
                             )
                         }
-                        Icon(Icons.Default.Edit, contentDescription = "Edit Duration", tint = Color.White)
+                        Icon(PhosphorIcons.Regular.PencilSimple, contentDescription = "Edit Duration", tint = TextSecondary, modifier = Modifier.size(16.dp))
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
-            // Usage Monitor Card (Summary)
+            // Weekly Screen Time
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .premiumCard()
+            ) {
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Column {
+                            Text(
+                                text = "WEEKLY AVERAGE",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = TextSecondary
+                            )
+                            val avgMillis = weeklyScreenTime.filter { it > 0 }.let {
+                                if (it.isEmpty()) 0L else it.sum() / it.size
+                            }
+                            val avgH = avgMillis / (60 * 60 * 1000)
+                            val avgM = (avgMillis % (60 * 60 * 1000)) / (60 * 1000)
+                            Text(
+                                text = "${avgH}h ${avgM}m",
+                                style = MaterialTheme.typography.headlineLarge,
+                                color = TextPrimary
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(SurfaceVariantColor),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(PhosphorIcons.Bold.ChartLineUp, contentDescription = null, tint = BrandSecondary, modifier = Modifier.size(20.dp))
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(32.dp))
+                    WeeklyScreenTimeGraph(dailyMillis = weeklyScreenTime)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // App Breakdown
             val dailyGoalMillis = 5 * 60 * 60 * 1000L
             val progress = (screenTimeToday.toFloat() / dailyGoalMillis).coerceAtMost(1f)
             val hours = screenTimeToday / (60 * 60 * 1000)
             val minutes = (screenTimeToday % (60 * 60 * 1000)) / (60 * 1000)
 
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = SurfaceColor),
-                shape = RoundedCornerShape(24.dp)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .premiumCard()
             ) {
-                Column(modifier = Modifier.padding(20.dp)) {
+                Column {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("USAGE MONITOR", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-                        Text("${(progress * 100).toInt()}% Used", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                        Text("TODAY'S USAGE", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+                        Text("${(progress * 100).toInt()}% Used", style = MaterialTheme.typography.labelMedium, color = BrandPrimary)
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Screen Time Today",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = Color.White
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         LinearProgressIndicator(
                             progress = { progress },
                             modifier = Modifier
                                 .weight(1f)
-                                .height(8.dp)
+                                .height(6.dp)
                                 .clip(CircleShape),
-                            color = MaterialTheme.colorScheme.primary,
-                            trackColor = Color.Black.copy(alpha = 0.3f)
+                            color = BrandSecondary,
+                            trackColor = SurfaceVariantColor
                         )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text("${hours}h ${minutes}m / 5h", style = MaterialTheme.typography.bodySmall, color = Color.White)
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Text("${hours}h ${minutes}m", style = MaterialTheme.typography.bodyLarge, color = TextPrimary)
                     }
                     
-                    Spacer(modifier = Modifier.height(16.dp))
-                    HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    // App Usage List
-                    Text("App Breakdown", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    appUsageList.filter { it.usageTimeMillis > 0 }.forEach { app ->
-                        val appHours = app.usageTimeMillis / (60 * 60 * 1000)
-                        val appMinutes = (app.usageTimeMillis % (60 * 60 * 1000)) / (60 * 1000)
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            app.icon?.let { icon ->
-                                Image(
-                                    bitmap = icon.toBitmap().asImageBitmap(),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
+                    if (appUsageList.any { it.usageTimeMillis > 0 }) {
+                        Spacer(modifier = Modifier.height(24.dp))
+                        HorizontalDivider(color = BorderColor)
+                        Spacer(modifier = Modifier.height(24.dp))
+                        
+                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            appUsageList.filter { it.usageTimeMillis > 0 }.forEach { app ->
+                                val appHours = app.usageTimeMillis / (60 * 60 * 1000)
+                                val appMinutes = (app.usageTimeMillis % (60 * 60 * 1000)) / (60 * 1000)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    app.iconBitmap?.let { bmp ->
+                                        Image(
+                                            bitmap = bmp,
+                                            contentDescription = null,
+                                            modifier = Modifier
+                                                .size(32.dp)
+                                                .clip(SquircleShape())
+                                        )
+                                    } ?: Box(modifier = Modifier.size(32.dp).background(SurfaceVariantColor, SquircleShape()))
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Text(app.appName, style = MaterialTheme.typography.bodyLarge, color = TextPrimary, modifier = Modifier.weight(1f))
+                                    Text("${appHours}h ${appMinutes}m", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                                }
                             }
-                            Text(app.appName, style = MaterialTheme.typography.bodySmall, color = Color.White, modifier = Modifier.weight(1f))
-                            Text("${appHours}h ${appMinutes}m", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
-            // Balance and Level
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            // Stats row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
                 StatusCard(
                     modifier = Modifier.weight(1f),
                     title = "BALANCE",
                     value = "${userProfile.points}",
-                    icon = Icons.Default.MonetizationOn,
-                    iconColor = Color(0xFFFFD700),
+                    icon = PhosphorIcons.Bold.Coins,
+                    iconColor = BrandPrimary,
                     onClick = onRewardsClick
                 )
                 StatusCard(
                     modifier = Modifier.weight(1f),
                     title = "LEVEL",
-                    value = "Pro ${userProfile.streakCount / 5 + 1}",
-                    icon = Icons.Default.MilitaryTech,
-                    iconColor = Color(0xFF9C27B0),
+                    value = MotivationHelper.getFocusLevel(userProfile.streakCount),
+                    icon = PhosphorIcons.Bold.Trophy,
+                    iconColor = BrandSecondary,
                     onClick = onProfileClick
                 )
             }
@@ -385,7 +445,8 @@ fun CustomTimePickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Set Focus Duration") },
+        title = { Text("Set Focus Duration", color = TextPrimary, style = MaterialTheme.typography.titleLarge) },
+        containerColor = SurfaceColor,
         text = {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -393,20 +454,20 @@ fun CustomTimePickerDialog(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 NumberPicker(value = hours, range = 0..23, label = "HH") { hours = it }
-                Text(":", fontWeight = FontWeight.Bold)
+                Text(":", style = MaterialTheme.typography.titleLarge, color = TextPrimary)
                 NumberPicker(value = minutes, range = 0..59, label = "MM") { minutes = it }
-                Text(":", fontWeight = FontWeight.Bold)
+                Text(":", style = MaterialTheme.typography.titleLarge, color = TextPrimary)
                 NumberPicker(value = seconds, range = 0..59, label = "SS") { seconds = it }
             }
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(hours * 3600 + minutes * 60 + seconds) }) {
-                Text("Set")
+                Text("Save", color = BrandPrimary, fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text("Cancel", color = TextSecondary)
             }
         }
     )
@@ -415,17 +476,26 @@ fun CustomTimePickerDialog(
 @Composable
 fun NumberPicker(value: Int, range: IntRange, label: String, onValueChange: (Int) -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(label, style = MaterialTheme.typography.labelSmall)
-        IconButton(onClick = { if (value < range.last) onValueChange(value + 1) }) {
-            Icon(Icons.Default.KeyboardArrowUp, contentDescription = null)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+        Spacer(modifier = Modifier.height(8.dp))
+        IconButton(
+            onClick = { if (value < range.last) onValueChange(value + 1) },
+            modifier = Modifier.size(32.dp).background(SurfaceVariantColor, CircleShape)
+        ) {
+            Icon(Icons.Default.KeyboardArrowUp, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(16.dp))
         }
+        Spacer(modifier = Modifier.height(16.dp))
         Text(
             text = String.format("%02d", value),
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
+            style = MaterialTheme.typography.headlineLarge,
+            color = TextPrimary
         )
-        IconButton(onClick = { if (value > range.first) onValueChange(value - 1) }) {
-            Icon(Icons.Default.KeyboardArrowDown, contentDescription = null)
+        Spacer(modifier = Modifier.height(16.dp))
+        IconButton(
+            onClick = { if (value > range.first) onValueChange(value - 1) },
+            modifier = Modifier.size(32.dp).background(SurfaceVariantColor, CircleShape)
+        ) {
+            Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(16.dp))
         }
     }
 }
@@ -433,12 +503,10 @@ fun NumberPicker(value: Int, range: IntRange, label: String, onValueChange: (Int
 @Composable
 fun WeeklyScreenTimeGraph(dailyMillis: List<Long>) {
     val data = if (dailyMillis.size < 7) List(7) { dailyMillis.getOrElse(it) { 0L } } else dailyMillis.takeLast(7)
-    // Max is at least 1 hour so the graph always has meaningful scale
     val maxMillis = (data.maxOrNull()?.coerceAtLeast(3_600_000L) ?: 3_600_000L).toFloat()
 
-    // Build day-of-week labels for the last 7 days
     val dayLabels = remember {
-        val names = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+        val names = listOf("S", "M", "T", "W", "T", "F", "S")
         val cal = java.util.Calendar.getInstance()
         (6 downTo 0).map { daysAgo ->
             val c = java.util.Calendar.getInstance().apply {
@@ -449,111 +517,57 @@ fun WeeklyScreenTimeGraph(dailyMillis: List<Long>) {
         }
     }
 
-    val accentColor = MaterialTheme.colorScheme.primary
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .wrapContentHeight()
-    ) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        val barTrackColor = SurfaceVariantColor
+        val barColor = BrandPrimary
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(220.dp)
-                .background(Color.Black.copy(alpha = 0.1f), shape = RoundedCornerShape(12.dp))
-                .padding(start = 36.dp, end = 12.dp, top = 12.dp, bottom = 12.dp)
+                .height(160.dp)
         ) {
-            // Y-axis hour labels drawn as Text overlays
-            val maxHours = (maxMillis / 3_600_000f).let { kotlin.math.ceil(it.toDouble()).toInt().coerceAtLeast(1) }
-            val step = if (maxHours <= 4) 1 else if (maxHours <= 10) 2 else (maxHours / 4).coerceAtLeast(1)
-            val labels = (0..maxHours step step).toList()
-
-            labels.forEach { h ->
-                val fraction = h.toFloat() / maxHours
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight()
-                ) {
-                    Text(
-                        text = "${h}h",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.35f),
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .offset(x = (-32).dp)
-                            .offset(y = -(fraction * 196).dp) // rough positioning within 220-24dp area
-                    )
-                }
-            }
-
-            Canvas(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight()
-            ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
                 val canvasWidth = size.width
                 val canvasHeight = size.height
                 val barCount = data.size
-                val barWidthPx = canvasWidth / barCount * 0.55f
+                val barWidthPx = 16.dp.toPx()
                 val gapPx = canvasWidth / barCount
 
-                // Grid lines
-                for (h in labels) {
-                    val y = canvasHeight - (h.toFloat() / maxHours * canvasHeight)
-                    drawLine(
-                        color = Color.White.copy(alpha = 0.06f),
-                        start = Offset(0f, y),
-                        end = Offset(canvasWidth, y),
-                        strokeWidth = 1.dp.toPx()
-                    )
-                }
-
-                // Bars
+                // Clean minimal bars
                 data.forEachIndexed { index, millis ->
                     val barHeight = (millis / maxMillis) * canvasHeight
                     val x = index * gapPx + (gapPx - barWidthPx) / 2
-                    // Bar
+                    
+                    // Track (background bar)
                     drawRoundRect(
-                        color = accentColor,
-                        topLeft = Offset(x, canvasHeight - barHeight),
-                        size = androidx.compose.ui.geometry.Size(barWidthPx, barHeight.coerceAtLeast(2.dp.toPx())),
-                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(6.dp.toPx(), 6.dp.toPx())
+                        color = barTrackColor,
+                        topLeft = Offset(x, 0f),
+                        size = Size(barWidthPx, canvasHeight),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(barWidthPx/2, barWidthPx/2)
                     )
-                    // Hour label above bar
-                    // (drawn as part of the row below instead)
+                    
+                    // Value (foreground bar)
+                    drawRoundRect(
+                        color = barColor,
+                        topLeft = Offset(x, canvasHeight - barHeight),
+                        size = Size(barWidthPx, barHeight.coerceAtLeast(barWidthPx)),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(barWidthPx/2, barWidthPx/2)
+                    )
                 }
             }
         }
 
-        // Day labels + hour values
+        Spacer(modifier = Modifier.height(16.dp))
+
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 6.dp, start = 36.dp, end = 12.dp),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            data.forEachIndexed { index, millis ->
-                val h = millis / 3_600_000
-                val m = (millis % 3_600_000) / 60_000
-                Column(
-                    modifier = Modifier.weight(1f),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = if (h > 0) "${h}h${m}m" else "${m}m",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = accentColor.copy(alpha = 0.8f),
-                        textAlign = TextAlign.Center,
-                        fontSize = 9.sp
-                    )
-                    Text(
-                        text = dayLabels.getOrElse(index) { "" },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.5f),
-                        textAlign = TextAlign.Center
-                    )
-                }
+            data.forEachIndexed { index, _ ->
+                Text(
+                    text = dayLabels.getOrElse(index) { "" },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary
+                )
             }
         }
     }
@@ -568,29 +582,25 @@ fun StatusCard(
     iconColor: Color,
     onClick: () -> Unit
 ) {
-    Card(
-        modifier = modifier.clickable { onClick() },
-        colors = CardDefaults.cardColors(containerColor = SurfaceColor),
-        shape = RoundedCornerShape(24.dp)
+    Box(
+        modifier = modifier
+            .premiumCard()
+            .clickable { onClick() }
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Column {
             Box(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape)
-                    .background(iconColor.copy(alpha = 0.1f)),
+                    .background(SurfaceVariantColor),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(icon, contentDescription = null, tint = iconColor)
+                Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(20.dp))
             }
-            Spacer(modifier = Modifier.width(12.dp))
-            Column {
-                Text(text = title, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
-                Text(text = value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
-            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(text = title, style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(text = value, style = MaterialTheme.typography.titleLarge, color = TextPrimary)
         }
     }
 }

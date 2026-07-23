@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">UnDrift</string>
+    <string name="accessibility_service_description">Used by UnDrift AI Agent to detect context and prevent blocking during important tasks.</string>
 </resources>

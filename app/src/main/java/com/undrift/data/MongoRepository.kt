@@ -26,11 +26,11 @@ class MongoRepository {
         }
     }
 
-    private val connectionStringValue = "mongodb://main:undrift_starter@" +
-            "ac-1zcpaet-shard-00-00.ey4ivza.mongodb.net:27017," +
-            "ac-1zcpaet-shard-00-01.ey4ivza.mongodb.net:27017," +
-            "ac-1zcpaet-shard-00-02.ey4ivza.mongodb.net:27017/" +
-            "?tls=true&replicaSet=atlas-gaunjv-shard-0&authSource=admin&retryWrites=true&w=majority&appName=Cluster0"
+    private val connectionStringValue = "mongodb://jinansh:admin132@" +
+            "ac-jaumvc2-shard-00-00.ckjs3v9.mongodb.net:27017," +
+            "ac-jaumvc2-shard-00-01.ckjs3v9.mongodb.net:27017," +
+            "ac-jaumvc2-shard-00-02.ckjs3v9.mongodb.net:27017/" +
+            "?ssl=true&replicaSet=atlas-toptzf-shard-0&authSource=admin&appName=Cluster0"
     
     private val client by lazy { 
         try {
@@ -43,16 +43,6 @@ class MongoRepository {
             val settings = MongoClientSettings.builder()
                 .applyConnectionString(ConnectionString(connectionStringValue))
                 .serverApi(serverApi)
-                .applyToSslSettings { builder ->
-                    builder.enabled(true)
-                }
-                .applyToClusterSettings { builder ->
-                    builder.serverSelectionTimeout(20, TimeUnit.SECONDS)
-                }
-                .applyToSocketSettings { builder ->
-                    builder.connectTimeout(20, TimeUnit.SECONDS)
-                    builder.readTimeout(20, TimeUnit.SECONDS)
-                }
                 .build()
             
             val mClient = MongoClient.create(settings)
@@ -78,7 +68,9 @@ class MongoRepository {
                 .append("goal", profile.goal)
                 .append("points", profile.points)
                 .append("streakCount", profile.streakCount)
+                .append("bestStreak", profile.bestStreak)
                 .append("streakHistory", profile.streakHistory)
+                .append("lastStreakDate", profile.lastStreakDate)
                 .append("focusDurationMinutes", profile.focusDurationMinutes)
                 .append("lastExtraTimePurchaseDate", profile.lastExtraTimePurchaseDate)
                 .append("blockedApps", profile.blockedApps.toList())
@@ -92,7 +84,9 @@ class MongoRepository {
                     Updates.set("goal", profile.goal),
                     Updates.set("points", profile.points),
                     Updates.set("streakCount", profile.streakCount),
+                    Updates.set("bestStreak", profile.bestStreak),
                     Updates.set("streakHistory", profile.streakHistory),
+                    Updates.set("lastStreakDate", profile.lastStreakDate),
                     Updates.set("focusDurationMinutes", profile.focusDurationMinutes),
                     Updates.set("lastExtraTimePurchaseDate", profile.lastExtraTimePurchaseDate),
                     Updates.set("blockedApps", profile.blockedApps.toList()),

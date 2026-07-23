@@ -1,0 +1,23 @@
+Initialized native services in: C:\Users\Jinansh\.gradle\native
+Initialized jansi services in: C:\Users\Jinansh\.gradle\native
+Removing 0 daemon stop events from registry
+Previous Daemon (14080) stopped at Thu Jul 16 11:59:05 IST 2026 stop command received
+Starting a Gradle Daemon, 1 stopped Daemon could not be reused, use --status for details
+Daemon JVM discovery is an incubating feature.
+Starting process 'command 'C:\Program Files\Java\jdk-23\bin\java.exe''. Working directory: C:\Users\Jinansh\.gradle\.tmp\tmp-jvm2911533215463417684probe Command: C:\Program Files\Java\jdk-23\bin\java.exe -Xmx32m -Xms32m -cp . JavaProbe
+Successfully started process 'command 'C:\Program Files\Java\jdk-23\bin\java.exe''
+Received JVM installation metadata from 'C:\Program Files\Java\jdk-23': {JAVA_HOME=C:\Program Files\Java\jdk-23, JAVA_VERSION=23.0.1, JAVA_VENDOR=Oracle Corporation, RUNTIME_NAME=Java(TM) SE Runtime Environment, RUNTIME_VERSION=23.0.1+11-39, VM_NAME=Java HotSpot(TM) 64-Bit Server VM, VM_VERSION=23.0.1+11-39, VM_VENDOR=Oracle Corporation, OS_ARCH=amd64}
+Received JVM installation metadata from 'C:\Program Files\Java\jdk-25.0.2': {JAVA_HOME=C:\Program Files\Java\jdk-25.0.2, JAVA_VERSION=25.0.2, JAVA_VENDOR=Oracle Corporation, RUNTIME_NAME=OpenJDK Runtime Environment, RUNTIME_VERSION=25.0.2+10-69, VM_NAME=OpenJDK 64-Bit Server VM, VM_VERSION=25.0.2+10-69, VM_VENDOR=Oracle Corporation, OS_ARCH=amd64}
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Unable to download toolchain matching the requirements ({languageVersion=21, vendor=JetBrains, implementation=vendor-specific}) from 'null', due to: No defined toolchain download url for WINDOWS on x86_64 architecture.
+
+* Try:
+> Learn more about toolchain auto-detection and auto-provisioning at https://docs.gradle.org/8.13/userguide/toolchains.html#sec:auto_detection.
+> Learn more about toolchain repositories at https://docs.gradle.org/8.13/userguide/toolchains.html#sub:download_repositories.
+> Run with --stacktrace option to get the stack trace.
+> Run with --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.

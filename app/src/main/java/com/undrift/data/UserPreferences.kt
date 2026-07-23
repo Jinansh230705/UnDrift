@@ -20,6 +20,7 @@ data class UserProfile(
     val isFirstLaunch: Boolean = true,
     val points: Int = 0,
     val streakCount: Int = 0,
+    val bestStreak: Int = 0,
     val streakHistory: List<Int> = emptyList(),
     val focusDurationMinutes: Int = 60,
     val lastExtraTimePurchaseDate: Long = 0L,
@@ -27,8 +28,12 @@ data class UserProfile(
     val appsExceededLimitToday: Set<String> = emptySet(),
     val appLimits: Map<String, Long> = emptyMap(), // Package name to limit in millis
     val lastStreakDate: Long = 0L,
-    val themeColor: Long = 0xFFCE705D, // Default to Orange
-    val demoMode: Boolean = false
+    val themeColor: Long = 0xFFFFFFFF, // Default to White
+    val demoMode: Boolean = false,
+    val themeMode: Int = 0, // 0 = System, 1 = Light, 2 = Dark
+    val aiApiUrl: String = "",
+    val aiApiKey: String = "",
+    val isMonitoringEnabled: Boolean = true
 )
 
 class UserPreferences(private val context: Context) {
@@ -52,6 +57,11 @@ class UserPreferences(private val context: Context) {
         private val LAST_STREAK_DATE = longPreferencesKey("last_streak_date")
         private val THEME_COLOR = longPreferencesKey("theme_color")
         private val DEMO_MODE = booleanPreferencesKey("demo_mode")
+        private val THEME_MODE = intPreferencesKey("theme_mode")
+        private val BEST_STREAK = intPreferencesKey("best_streak")
+        private val AI_API_URL = stringPreferencesKey("ai_api_url")
+        private val AI_API_KEY = stringPreferencesKey("ai_api_key")
+        private val IS_MONITORING_ENABLED = booleanPreferencesKey("is_monitoring_enabled")
     }
 
     val userProfileFlow: Flow<UserProfile> = context.dataStore.data.map { preferences ->
@@ -93,6 +103,7 @@ class UserPreferences(private val context: Context) {
             isFirstLaunch = preferences[IS_FIRST_LAUNCH] ?: true,
             points = preferences[POINTS] ?: 0,
             streakCount = effectiveStreak,
+            bestStreak = preferences[BEST_STREAK] ?: 0,
             streakHistory = (preferences[STREAK_HISTORY] ?: "0,0,0,0,0,0,0").split(",").map { it.toIntOrNull() ?: 0 },
             focusDurationMinutes = preferences[FOCUS_DURATION] ?: 60,
             lastExtraTimePurchaseDate = preferences[LAST_EXTRA_TIME_PURCHASE] ?: 0L,
@@ -100,8 +111,12 @@ class UserPreferences(private val context: Context) {
             appsExceededLimitToday = exceededApps,
             appLimits = appLimits,
             lastStreakDate = lastStreakDateMillis,
-            themeColor = preferences[THEME_COLOR] ?: 0xFFCE705D,
-            demoMode = preferences[DEMO_MODE] ?: false
+            themeColor = preferences[THEME_COLOR] ?: 0xFFFFFFFF,
+            demoMode = preferences[DEMO_MODE] ?: false,
+            themeMode = preferences[THEME_MODE] ?: 0,
+            aiApiUrl = preferences[AI_API_URL] ?: "",
+            aiApiKey = preferences[AI_API_KEY] ?: "",
+            isMonitoringEnabled = preferences[IS_MONITORING_ENABLED] ?: true
         )
     }
 
@@ -123,12 +138,35 @@ class UserPreferences(private val context: Context) {
             preferences[APP_LIMITS] = profile.appLimits.entries.joinToString(",") { "${it.key}:${it.value}" }
             preferences[LAST_STREAK_DATE] = profile.lastStreakDate
             preferences[THEME_COLOR] = profile.themeColor
+            preferences[THEME_MODE] = profile.themeMode
+            preferences[AI_API_URL] = profile.aiApiUrl
+            preferences[AI_API_KEY] = profile.aiApiKey
+            preferences[IS_MONITORING_ENABLED] = profile.isMonitoringEnabled
         }
     }
 
     suspend fun setThemeColor(color: Long) {
         context.dataStore.edit { preferences ->
             preferences[THEME_COLOR] = color
+        }
+    }
+
+    suspend fun setThemeMode(mode: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[THEME_MODE] = mode
+        }
+    }
+
+    suspend fun updateAiSettings(apiUrl: String, apiKey: String) {
+        context.dataStore.edit { preferences ->
+            preferences[AI_API_URL] = apiUrl
+            preferences[AI_API_KEY] = apiKey
+        }
+    }
+
+    suspend fun setMonitoringEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[IS_MONITORING_ENABLED] = enabled
         }
     }
 
@@ -144,6 +182,10 @@ class UserPreferences(private val context: Context) {
             preferences[STREAK_COUNT] = streak
             preferences[STREAK_HISTORY] = history.joinToString(",")
             preferences[LAST_STREAK_DATE] = System.currentTimeMillis()
+            val currentBest = preferences[BEST_STREAK] ?: 0
+            if (streak > currentBest) {
+                preferences[BEST_STREAK] = streak
+            }
         }
     }
 
@@ -164,6 +206,15 @@ class UserPreferences(private val context: Context) {
     suspend fun setFocusDuration(minutes: Int) {
         context.dataStore.edit { preferences ->
             preferences[FOCUS_DURATION] = minutes
+        }
+    }
+
+    suspend fun forceRestoreStreak(streak: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[STREAK_COUNT] = streak
+            val cal = Calendar.getInstance()
+            cal.add(Calendar.DAY_OF_YEAR, -1)
+            preferences[LAST_STREAK_DATE] = cal.timeInMillis
         }
     }
 

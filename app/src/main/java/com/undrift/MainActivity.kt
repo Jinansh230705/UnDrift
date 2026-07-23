@@ -11,17 +11,23 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.adamglin.PhosphorIcons
+import com.adamglin.phosphoricons.*
+import com.adamglin.phosphoricons.bold.*
+import com.adamglin.phosphoricons.regular.*
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -39,6 +45,20 @@ import com.undrift.service.FocusService
 import com.undrift.ui.screens.*
 import com.undrift.ui.theme.UnDriftTheme
 import kotlinx.coroutines.launch
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.flow.first
+
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.SharedTransitionScope
+
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.haze
+import dev.chrisbanes.haze.hazeChild
+
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.HazeDefaults
 
 class MainActivity : ComponentActivity() {
     private lateinit var userPreferences: UserPreferences
@@ -47,13 +67,38 @@ class MainActivity : ComponentActivity() {
     // State to track the latest intent for navigation
     private var intentState = mutableStateOf<Intent?>(null)
 
+    @OptIn(ExperimentalSharedTransitionApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Temporary receiver to restore user's streak
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(context: android.content.Context, intent: android.content.Intent) {
+                lifecycleScope.launch {
+                    val prefs = UserPreferences(this@MainActivity)
+                    prefs.forceRestoreStreak(2)
+                    android.widget.Toast.makeText(this@MainActivity, "Streak Restored to 2!", android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(receiver, android.content.IntentFilter("com.undrift.RESTORE_STREAK"), android.content.Context.RECEIVER_EXPORTED)
+        } else {
+            androidx.core.content.ContextCompat.registerReceiver(this, receiver, android.content.IntentFilter("com.undrift.RESTORE_STREAK"), androidx.core.content.ContextCompat.RECEIVER_EXPORTED)
+        }
+
+        enableEdgeToEdge()
         userPreferences = UserPreferences(this)
         intentState.value = intent
         
         checkPermissions()
-        startMonitoringService()
+        
+        lifecycleScope.launch {
+            val profile = userPreferences.userProfileFlow.first()
+            if (profile.isMonitoringEnabled) {
+                startMonitoringService()
+            }
+        }
         
         enableEdgeToEdge()
         setContent {
@@ -61,15 +106,16 @@ class MainActivity : ComponentActivity() {
                 initialValue = UserProfile("", "", "", "", "", false, true)
             )
             
-            UnDriftTheme(themeColor = Color(userProfile.themeColor)) {
+            UnDriftTheme(themeMode = userProfile.themeMode) {
                 val navController = rememberNavController()
                 val scope = rememberCoroutineScope()
+                val hazeState = remember { HazeState() }
 
                 val currentBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentDestination = currentBackStackEntry?.destination
                 
                 val showBottomBar = currentDestination?.route?.startsWith("nudge") != true && 
-                                    currentDestination?.route in listOf("dashboard", "ai_agent", "badges", "profile")
+                                    currentDestination?.route in listOf("dashboard", "ai_agent", "rewards", "profile")
 
                 // Handle incoming Intent for navigation using State
                 val currentIntent by intentState
@@ -85,126 +131,180 @@ class MainActivity : ComponentActivity() {
                         if (showBottomBar) {
                             BottomNavigationBar(
                                 navController = navController,
+                                hazeState = hazeState,
                                 onAddClick = { navController.navigate("app_block") }
                             )
                         }
                     },
                     containerColor = MaterialTheme.colorScheme.background
                 ) { innerPadding ->
-                    NavHost(
-                        navController = navController,
-                        startDestination = when {
-                            userProfile.isLoggedIn -> "dashboard"
-                            userProfile.isFirstLaunch -> "splash"
-                            else -> "auth"
-                        },
-                        modifier = Modifier.padding(innerPadding)
-                    ) {
-                        composable("splash") {
-                            SplashScreen(
-                                onGetStarted = { navController.navigate("onboarding") },
-                                onSignInClick = { navController.navigate("auth") }
-                            )
-                        }
-                        composable("auth") {
-                            AuthScreen(
-                                onAuthSuccess = { profile ->
-                                    scope.launch {
-                                        userPreferences.saveUserProfile(profile)
-                                        navController.navigate("dashboard") {
-                                            popUpTo("auth") { inclusive = true }
+                    SharedTransitionLayout {
+                        Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+                            NavHost(
+                                navController = navController,
+                                startDestination = when {
+                                    userProfile.isLoggedIn -> "dashboard"
+                                    userProfile.isFirstLaunch -> "splash"
+                                    else -> "auth"
+                                },
+                                modifier = Modifier.fillMaxSize().haze(state = hazeState),
+                                enterTransition = {
+                                androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(300)) + 
+                                androidx.compose.animation.scaleIn(initialScale = 0.95f, animationSpec = androidx.compose.animation.core.tween(300))
+                            },
+                            exitTransition = {
+                                androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(300)) + 
+                                androidx.compose.animation.scaleOut(targetScale = 1.05f, animationSpec = androidx.compose.animation.core.tween(300))
+                            },
+                            popEnterTransition = {
+                                androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(300)) + 
+                                androidx.compose.animation.scaleIn(initialScale = 1.05f, animationSpec = androidx.compose.animation.core.tween(300))
+                            },
+                            popExitTransition = {
+                                androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(300)) + 
+                                androidx.compose.animation.scaleOut(targetScale = 0.95f, animationSpec = androidx.compose.animation.core.tween(300))
+                            }
+                        ) {
+                            composable("splash") {
+                                SplashScreen(
+                                    onGetStarted = { navController.navigate("onboarding") },
+                                    onSignInClick = { navController.navigate("auth") },
+                                    animatedVisibilityScope = this@composable,
+                                    sharedTransitionScope = this@SharedTransitionLayout
+                                )
+                            }
+                            composable("auth") {
+                                AuthScreen(
+                                    onAuthSuccess = { profile ->
+                                        scope.launch {
+                                            userPreferences.saveUserProfile(profile)
+                                            navController.navigate("dashboard") {
+                                                popUpTo("auth") { inclusive = true }
+                                            }
                                         }
-                                    }
-                                },
-                                mongoRepository = mongoRepository,
-                                userPreferences = userPreferences
-                            )
-                        }
-                        composable("onboarding") {
-                            OnboardingAgentsScreen(onGetStarted = { 
-                                scope.launch {
-                                    userPreferences.setFirstLaunchCompleted()
-                                    navController.navigate("auth")
-                                }
-                            })
-                        }
-                        composable("dashboard") {
-                            DashboardScreen(
-                                userProfile = userProfile,
-                                userPreferences = userPreferences,
-                                onProfileClick = { navController.navigate("profile") },
-                                onAddClick = { navController.navigate("app_block") },
-                                onRewardsClick = { navController.navigate("rewards") }
-                            )
-                        }
-                        composable("profile") {
-                            ProfileScreen(
-                                userProfile = userProfile,
-                                userPreferences = userPreferences,
-                                onBack = { navController.popBackStack() },
-                                onLogout = {
-                                    scope.launch {
-                                        userPreferences.logout()
-                                        navController.navigate("auth") {
-                                            popUpTo(0)
+                                    },
+                                    mongoRepository = mongoRepository,
+                                    userPreferences = userPreferences,
+                                    animatedVisibilityScope = this@composable,
+                                    sharedTransitionScope = this@SharedTransitionLayout
+                                )
+                            }
+                            composable("onboarding") {
+                                OnboardingAgentsScreen(
+                                    onGetStarted = { 
+                                        scope.launch {
+                                            userPreferences.setFirstLaunchCompleted()
+                                            navController.navigate("auth")
                                         }
-                                    }
-                                },
-                                onNavigateToAgents = { navController.navigate("ai_agent") },
-                                onNavigateToShop = { navController.navigate("rewards") },
-                                onColorSelect = { color ->
-                                    scope.launch {
-                                        userPreferences.setThemeColor(color)
-                                    }
-                                }
-                            )
+                                    },
+                                    animatedVisibilityScope = this@composable,
+                                    sharedTransitionScope = this@SharedTransitionLayout
+                                )
+                            }
+                            composable("dashboard") {
+                                DashboardScreen(
+                                    userProfile = userProfile,
+                                    userPreferences = userPreferences,
+                                    onProfileClick = { navController.navigate("profile") },
+                                    onAddClick = { navController.navigate("app_block") },
+                                    onRewardsClick = { navController.navigate("rewards") },
+                                    animatedVisibilityScope = this@composable,
+                                    sharedTransitionScope = this@SharedTransitionLayout
+                                )
+                            }
+                            composable("profile") {
+                                ProfileScreen(
+                                    userProfile = userProfile,
+                                    userPreferences = userPreferences,
+                                    onBack = { navController.popBackStack() },
+                                    onLogout = {
+                                        scope.launch {
+                                            userPreferences.logout()
+                                            navController.navigate("auth") {
+                                                popUpTo(0)
+                                            }
+                                        }
+                                    },
+                                    onNavigateToAgents = { navController.navigate("ai_agent") },
+                                    onNavigateToShop = { navController.navigate("rewards") },
+                                    onColorSelect = { color ->
+                                        scope.launch {
+                                            userPreferences.setThemeColor(color)
+                                        }
+                                    },
+                                    animatedVisibilityScope = this@composable,
+                                    sharedTransitionScope = this@SharedTransitionLayout
+                                )
+                            }
+                            composable("app_block") {
+                                AppBlockScreen(
+                                    onBack = { navController.popBackStack() },
+                                    userPreferences = userPreferences,
+                                    animatedVisibilityScope = this@composable,
+                                    sharedTransitionScope = this@SharedTransitionLayout
+                                )
+                            }
+                            composable("rewards") {
+                                RewardsShopScreen(
+                                    onBack = { navController.popBackStack() },
+                                    userProfile = userProfile,
+                                    userPreferences = userPreferences,
+                                    mongoRepository = mongoRepository,
+                                    animatedVisibilityScope = this@composable,
+                                    sharedTransitionScope = this@SharedTransitionLayout
+                                )
+                            }
+                            composable(
+                                route = "nudge?package={package}&reason={reason}",
+                                arguments = listOf(
+                                    navArgument("package") { type = NavType.StringType; nullable = true },
+                                    navArgument("reason") { type = NavType.StringType; nullable = true }
+                                )
+                            ) { backStackEntry ->
+                                val pkg = backStackEntry.arguments?.getString("package")
+                                val reason = backStackEntry.arguments?.getString("reason")
+                                FocusNudgeScreen(
+                                    packageName = pkg,
+                                    reason = reason,
+                                    onBackToFocus = { 
+                                        val startMain = Intent(Intent.ACTION_MAIN)
+                                        startMain.addCategory(Intent.CATEGORY_HOME)
+                                        startMain.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                        startActivity(startMain)
+                                    },
+                                    onNeedTime = { navController.navigate("rewards") },
+                                    animatedVisibilityScope = this@composable,
+                                    sharedTransitionScope = this@SharedTransitionLayout
+                                )
+                            }
+                            composable("ai_agent") {
+                                AiAgentScreen(
+                                    userProfile = userProfile,
+                                    userPreferences = userPreferences,
+                                    onBack = { navController.popBackStack() },
+                                    animatedVisibilityScope = this@composable,
+                                    sharedTransitionScope = this@SharedTransitionLayout
+                                )
+                            }
+                            composable("badges") {
+                                ComingSoonScreen("Badges & Achievements")
+                            }
                         }
-                        composable("app_block") {
-                            AppBlockScreen(
-                                onBack = { navController.popBackStack() },
-                                userPreferences = userPreferences
-                            )
-                        }
-                        composable("rewards") {
-                            RewardsShopScreen(
-                                onBack = { navController.popBackStack() },
-                                userProfile = userProfile,
-                                userPreferences = userPreferences,
-                                mongoRepository = mongoRepository
-                            )
-                        }
-                        composable(
-                            route = "nudge?package={package}&reason={reason}",
-                            arguments = listOf(
-                                navArgument("package") { type = NavType.StringType; nullable = true },
-                                navArgument("reason") { type = NavType.StringType; nullable = true }
-                            )
-                        ) { backStackEntry ->
-                            val pkg = backStackEntry.arguments?.getString("package")
-                            val reason = backStackEntry.arguments?.getString("reason")
-                            FocusNudgeScreen(
-                                packageName = pkg,
-                                reason = reason,
-                                onBackToFocus = { 
-                                    val startMain = Intent(Intent.ACTION_MAIN)
-                                    startMain.addCategory(Intent.CATEGORY_HOME)
-                                    startMain.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                                    startActivity(startMain)
-                                },
-                                onNeedTime = { navController.navigate("rewards") }
-                            )
-                        }
-                        composable("ai_agent") {
-                            ComingSoonScreen("AI Agent")
-                        }
-                        composable("badges") {
-                            ComingSoonScreen("Badges & Achievements")
-                        }
+                        
+                        // Top progressive blur overlay
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 48.dp)
+                                .align(Alignment.TopCenter)
+                                .hazeChild(state = hazeState)
+                        )
                     }
                 }
             }
         }
     }
+}
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
@@ -250,7 +350,7 @@ class MainActivity : ComponentActivity() {
         val serviceIntent = Intent(this, FocusService::class.java).apply {
             action = "START_MONITORING"
         }
-        startForegroundService(serviceIntent)
+        androidx.core.content.ContextCompat.startForegroundService(this, serviceIntent)
     }
 }
 
@@ -264,7 +364,7 @@ fun ComingSoonScreen(featureName: String) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Icon(
-            Icons.Default.AutoAwesome,
+            PhosphorIcons.Bold.Sparkle,
             contentDescription = null,
             modifier = Modifier.size(80.dp),
             tint = MaterialTheme.colorScheme.primary
@@ -290,89 +390,100 @@ fun ComingSoonScreen(featureName: String) {
 @Composable
 fun BottomNavigationBar(
     navController: NavHostController,
+    hazeState: HazeState,
     onAddClick: () -> Unit
 ) {
-    // Use Box to allow the FAB to overlap the NavigationBar
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .navigationBarsPadding(),
+            .hazeChild(state = hazeState)
+            .navigationBarsPadding()
+            .padding(horizontal = 24.dp, vertical = 16.dp),
         contentAlignment = Alignment.BottomCenter
     ) {
         Surface(
-            color = com.undrift.ui.theme.SurfaceColor,
-            tonalElevation = 8.dp,
-            modifier = Modifier.fillMaxWidth().height(80.dp)
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+            shape = CircleShape,
+            tonalElevation = 0.dp,
+            modifier = Modifier.fillMaxWidth().height(64.dp)
         ) {
-            NavigationBar(
-                containerColor = Color.Transparent,
-                tonalElevation = 0.dp
-            ) {
-                val navBackStackEntry by navController.currentBackStackEntryAsState()
-                val currentDestination = navBackStackEntry?.destination
+            val navBackStackEntry by navController.currentBackStackEntryAsState()
+            val currentDestination = navBackStackEntry?.destination
 
-                NavigationBarItem(
+            Row(
+                modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                NavItem(
                     selected = currentDestination?.hierarchy?.any { it.route == "dashboard" } == true,
                     onClick = { navigateToRoute(navController, "dashboard") },
-                    icon = { Icon(Icons.Default.GridView, contentDescription = "DASH") },
-                    label = { Text("DASH") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.primary,
-                        unselectedIconColor = Color.White.copy(alpha = 0.6f),
-                        indicatorColor = Color.Transparent
-                    )
+                    iconRegular = PhosphorIcons.Regular.HouseLine,
+                    iconFilled = PhosphorIcons.Bold.HouseLine,
+                    label = "Dash"
                 )
-                NavigationBarItem(
+                
+                NavItem(
                     selected = currentDestination?.hierarchy?.any { it.route == "ai_agent" } == true,
                     onClick = { navigateToRoute(navController, "ai_agent") },
-                    icon = { Icon(Icons.Default.Psychology, contentDescription = "AI AGENT") },
-                    label = { Text("AI AGENT") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.primary,
-                        unselectedIconColor = Color.White.copy(alpha = 0.6f),
-                        indicatorColor = Color.Transparent
-                    )
+                    iconRegular = PhosphorIcons.Regular.Atom,
+                    iconFilled = PhosphorIcons.Bold.Atom,
+                    label = "Agent"
                 )
                 
-                Spacer(Modifier.weight(0.4f))
+                // Add Button (Floating inside the pill)
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary)
+                        .clickable { onAddClick() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(PhosphorIcons.Bold.Plus, contentDescription = "Add", tint = Color.White, modifier = Modifier.size(24.dp))
+                }
                 
-                NavigationBarItem(
-                    selected = currentDestination?.hierarchy?.any { it.route == "badges" } == true,
-                    onClick = { navigateToRoute(navController, "badges") },
-                    icon = { Icon(Icons.Default.EmojiEvents, contentDescription = "BADGES") },
-                    label = { Text("BADGES") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.primary,
-                        unselectedIconColor = Color.White.copy(alpha = 0.6f),
-                        indicatorColor = Color.Transparent
-                    )
+                NavItem(
+                    selected = currentDestination?.hierarchy?.any { it.route == "rewards" } == true,
+                    onClick = { navigateToRoute(navController, "rewards") },
+                    iconRegular = PhosphorIcons.Regular.Storefront,
+                    iconFilled = PhosphorIcons.Bold.Storefront,
+                    label = "Shop"
                 )
-                NavigationBarItem(
+                
+                NavItem(
                     selected = currentDestination?.hierarchy?.any { it.route == "profile" } == true,
                     onClick = { navigateToRoute(navController, "profile") },
-                    icon = { Icon(Icons.Default.Person, contentDescription = "PROFILE") },
-                    label = { Text("PROFILE") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.primary,
-                        unselectedIconColor = Color.White.copy(alpha = 0.6f),
-                        indicatorColor = Color.Transparent
-                    )
+                    iconRegular = PhosphorIcons.Regular.UserCircle,
+                    iconFilled = PhosphorIcons.Bold.UserCircle,
+                    label = "Profile"
                 )
             }
         }
-        
-        FloatingActionButton(
-            onClick = onAddClick,
-            modifier = Modifier
-                .offset(y = (-30).dp)
-                .size(60.dp),
-            shape = CircleShape,
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = Color.White,
-            elevation = FloatingActionButtonDefaults.elevation(8.dp)
-        ) {
-            Icon(Icons.Default.Add, contentDescription = "Add", modifier = Modifier.size(30.dp))
-        }
+    }
+}
+
+@Composable
+private fun NavItem(
+    selected: Boolean,
+    onClick: () -> Unit,
+    iconRegular: androidx.compose.ui.graphics.vector.ImageVector,
+    iconFilled: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String
+) {
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .clip(CircleShape)
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = if (selected) iconFilled else iconRegular,
+            contentDescription = label,
+            tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+            modifier = Modifier.size(24.dp)
+        )
     }
 }
 

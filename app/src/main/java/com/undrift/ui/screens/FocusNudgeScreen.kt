@@ -3,15 +3,14 @@ package com.undrift.ui.screens
 import android.content.Context
 import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.Stars
-import androidx.compose.material.icons.filled.Warning
+import com.undrift.ui.components.SquircleShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -25,15 +24,22 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
-import com.undrift.ui.theme.SurfaceColor
-import com.undrift.ui.theme.TextSecondary
+import com.adamglin.PhosphorIcons
+import com.adamglin.phosphoricons.*
+import com.adamglin.phosphoricons.bold.*
+import com.adamglin.phosphoricons.regular.*
+import com.undrift.ui.theme.*
+import com.undrift.ui.components.premiumCard
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun FocusNudgeScreen(
     packageName: String?,
     reason: String?,
     onBackToFocus: () -> Unit,
-    onNeedTime: () -> Unit
+    onNeedTime: () -> Unit,
+    animatedVisibilityScope: AnimatedVisibilityScope,
+    sharedTransitionScope: SharedTransitionScope
 ) {
     val context = LocalContext.current
     val pm = context.packageManager
@@ -58,59 +64,67 @@ fun FocusNudgeScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.98f))
+            .background(DarkBackground.copy(alpha = 0.96f))
             .padding(24.dp)
     ) {
-        Card(
+        Box(
             modifier = Modifier
                 .align(Alignment.Center)
-                .fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = SurfaceColor),
-            shape = RoundedCornerShape(32.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 16.dp)
+                .fillMaxWidth()
+                .premiumCard(padding = 24.dp)
         ) {
             Column(
-                modifier = Modifier.padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // App Icon or Agent Icon
+                // App Icon or Agent Icon in premium bubble
                 Box(
                     modifier = Modifier
-                        .size(100.dp)
-                        .clip(CircleShape)
-                        .background(Color.DarkGray)
+                        .size(96.dp)
+                        .premiumCard(
+                            cornerRadius = 24.dp,
+                            backgroundColor = SurfaceVariantColor,
+                            padding = 0.dp
+                        ),
+                    contentAlignment = Alignment.Center
                 ) {
                     if (appIcon != null) {
                         Image(
                             bitmap = appIcon,
                             contentDescription = null,
-                            modifier = Modifier.fillMaxSize().padding(20.dp)
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(16.dp)
+                                .clip(SquircleShape())
                         )
                     } else {
                         Icon(
-                            imageVector = Icons.Default.Bolt,
+                            imageVector = PhosphorIcons.Bold.Lightning,
                             contentDescription = null,
-                            modifier = Modifier.size(40.dp).align(Alignment.Center),
-                            tint = MaterialTheme.colorScheme.primary
+                            modifier = Modifier.size(36.dp),
+                            tint = BrandPrimary
                         )
                     }
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                Surface(
-                    color = Color.Black.copy(alpha = 0.3f),
-                    shape = RoundedCornerShape(16.dp)
+                Box(
+                    modifier = Modifier
+                        .premiumCard(
+                            cornerRadius = 12.dp,
+                            backgroundColor = SurfaceVariantColor,
+                            padding = 0.dp
+                        )
+                        .padding(horizontal = 14.dp, vertical = 6.dp)
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(8.dp)
+                                .size(6.dp)
                                 .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary)
+                                .background(if (reason == "LIMIT_EXCEEDED") Color(0xFFFF453A) else BrandPrimary)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
@@ -125,14 +139,13 @@ fun FocusNudgeScreen(
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Text(
-                    text = if (reason == "LIMIT_EXCEEDED") "⏹ Time's Up for $appName!" else "🎯 Focus Alert!",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    text = if (reason == "LIMIT_EXCEEDED") "Time's Up for $appName!" else "Focus Alert!",
+                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                    color = TextPrimary,
                     textAlign = TextAlign.Center
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
                     text = if (reason == "LIMIT_EXCEEDED") 
@@ -140,7 +153,8 @@ fun FocusNudgeScreen(
                         else "This app is currently blocked because you're in Deep Work mode.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondary,
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Center,
+                    lineHeight = 20.sp
                 )
 
                 Spacer(modifier = Modifier.height(40.dp))
@@ -150,12 +164,13 @@ fun FocusNudgeScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    shape = SquircleShape(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (reason == "LIMIT_EXCEEDED") Color(0xFFFF453A) else BrandPrimary,
+                        contentColor = DarkBackground
+                    )
                 ) {
-                    Icon(Icons.Default.Bolt, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Back to Focus", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text("Back to Focus", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -165,27 +180,33 @@ fun FocusNudgeScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = SquircleShape(),
                     border = null,
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White, containerColor = Color.White.copy(alpha = 0.05f))
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = TextPrimary,
+                        containerColor = SurfaceVariantColor
+                    )
                 ) {
-                    Text("Unlock with 50 Points", fontSize = 16.sp)
+                    Text("Unlock with 50 Points", fontSize = 16.sp, fontWeight = FontWeight.Medium)
                 }
 
-                Spacer(modifier = Modifier.height(32.dp))
+                Spacer(modifier = Modifier.height(28.dp))
                 
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
                     Icon(
-                        imageVector = Icons.Default.Stars,
+                        imageVector = PhosphorIcons.Bold.Star,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = BrandPrimary,
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         "Resisting distractions builds your streak",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Color.White.copy(alpha = 0.7f)
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextSecondary
                     )
                 }
             }

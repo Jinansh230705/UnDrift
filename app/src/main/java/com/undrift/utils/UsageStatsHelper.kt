@@ -7,13 +7,24 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.util.Log
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.core.graphics.drawable.toBitmap
 import java.util.*
 
 data class AppUsageInfo(
     val packageName: String,
     val appName: String,
     val usageTimeMillis: Long,
-    val icon: android.graphics.drawable.Drawable?
+    val iconBitmap: ImageBitmap? = null
+)
+
+private data class AppCacheEntry(
+    var appName: String? = null,
+    var iconBitmap: ImageBitmap? = null,
+    val isSystemAndNotUpdated: Boolean,
+    val hasLaunchIntent: Boolean,
+    var fullyLoaded: Boolean = false
 )
 
 object UsageStatsHelper {
@@ -43,9 +54,60 @@ object UsageStatsHelper {
         "com.android.providers.media",
         "com.android.providers.contacts",
         "com.android.providers.telephony",
-        "com.android.providers.calendar",
         "com.android.providers.downloads"
     )
+
+    private val appInfoCache = mutableMapOf<String, AppCacheEntry>()
+
+    private fun getAppCacheEntry(context: Context, packageName: String, loadFullDetails: Boolean): AppCacheEntry {
+        appInfoCache[packageName]?.let {
+            if (!loadFullDetails || it.fullyLoaded) return it
+        }
+        val packageManager = context.packageManager
+        val hasLaunchIntent = packageManager.getLaunchIntentForPackage(packageName) != null
+        
+        try {
+            val appInfo = packageManager.getApplicationInfo(packageName, 0)
+            val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+            val isUpdated = (appInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
+            val isSystemAndNotUpdated = isSystem && !isUpdated
+            
+            var appName: String? = null
+            var iconBitmap: ImageBitmap? = null
+            
+            if (loadFullDetails) {
+                appName = packageManager.getApplicationLabel(appInfo).toString()
+                iconBitmap = try { packageManager.getApplicationIcon(packageName).toBitmap().asImageBitmap() } catch (e: Exception) { null }
+            }
+            
+            val entry = appInfoCache[packageName] ?: AppCacheEntry(
+                appName = appName,
+                iconBitmap = iconBitmap,
+                isSystemAndNotUpdated = isSystemAndNotUpdated,
+                hasLaunchIntent = hasLaunchIntent,
+                fullyLoaded = loadFullDetails
+            )
+            
+            if (loadFullDetails && !entry.fullyLoaded) {
+                entry.appName = appName
+                entry.iconBitmap = iconBitmap
+                entry.fullyLoaded = true
+            }
+            
+            appInfoCache[packageName] = entry
+            return entry
+        } catch (e: Exception) {
+            val entry = AppCacheEntry(
+                appName = packageName,
+                iconBitmap = null,
+                isSystemAndNotUpdated = false,
+                hasLaunchIntent = hasLaunchIntent,
+                fullyLoaded = loadFullDetails
+            )
+            appInfoCache[packageName] = entry
+            return entry
+        }
+    }
 
     private fun calculateForegroundTimesFromEvents(
         usm: UsageStatsManager, startTime: Long, endTime: Long
@@ -145,31 +207,15 @@ object UsageStatsHelper {
             if (packageName == currentLauncher) return@mapNotNull null
             if (usageTime <= 5000) return@mapNotNull null
 
-            val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
-            if (launchIntent == null) return@mapNotNull null
-
-            // Filter out pure system apps (not updated by user)
-            try {
-                val appInfo = packageManager.getApplicationInfo(packageName, 0)
-                val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-                val isUpdated = (appInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
-                if (isSystem && !isUpdated) return@mapNotNull null
-            } catch (e: Exception) {
-                return@mapNotNull null
-            }
-
-            val appName = try {
-                val appInfo = packageManager.getApplicationInfo(packageName, 0)
-                packageManager.getApplicationLabel(appInfo).toString()
-            } catch (e: Exception) {
-                packageName
-            }
+            val cacheEntry = getAppCacheEntry(context, packageName, loadFullDetails = true)
+            if (!cacheEntry.hasLaunchIntent) return@mapNotNull null
+            if (cacheEntry.isSystemAndNotUpdated) return@mapNotNull null
 
             AppUsageInfo(
                 packageName = packageName,
-                appName = appName,
+                appName = cacheEntry.appName ?: packageName,
                 usageTimeMillis = usageTime,
-                icon = try { packageManager.getApplicationIcon(packageName) } catch (e: Exception) { null }
+                iconBitmap = cacheEntry.iconBitmap
             )
         }.sortedByDescending { it.usageTimeMillis }
     }
@@ -179,10 +225,6 @@ object UsageStatsHelper {
         return stats.sumOf { it.usageTimeMillis }
     }
 
-    /**
-     * Returns a list of 7 Longs representing total user-app screen time (in millis)
-     * for each of the last 7 days (index 0 = 6 days ago, index 6 = today).
-     */
     fun getWeeklyDailyScreenTime(context: Context): List<Long> {
         val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         val packageManager = context.packageManager
@@ -219,13 +261,11 @@ object UsageStatsHelper {
                 if (pkg == context.packageName) continue
                 if (pkg == currentLauncher) continue
                 if (time <= 5000) continue
-                val launchIntent = packageManager.getLaunchIntentForPackage(pkg) ?: continue
-                try {
-                    val appInfo = packageManager.getApplicationInfo(pkg, 0)
-                    val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-                    val isUpdated = (appInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
-                    if (isSystem && !isUpdated) continue
-                } catch (_: Exception) { continue }
+                
+                val cacheEntry = getAppCacheEntry(context, pkg, loadFullDetails = false)
+                if (!cacheEntry.hasLaunchIntent) continue
+                if (cacheEntry.isSystemAndNotUpdated) continue
+                
                 dayTotal += time
             }
             result.add(dayTotal)
@@ -235,7 +275,6 @@ object UsageStatsHelper {
 
     fun getInstalledApps(context: Context): List<AppUsageInfo> {
         val packageManager = context.packageManager
-        // Using queryIntentActivities is generally faster to find launcher apps than getInstalledApplications + getLaunchIntentForPackage
         val mainIntent = Intent(Intent.ACTION_MAIN, null)
         mainIntent.addCategory(Intent.CATEGORY_LAUNCHER)
         
@@ -255,33 +294,22 @@ object UsageStatsHelper {
                 packageName = packageName,
                 appName = resolveInfo.loadLabel(packageManager).toString(),
                 usageTimeMillis = 0,
-                icon = try { resolveInfo.loadIcon(packageManager) } catch (e: Exception) { null }
+                iconBitmap = try { resolveInfo.loadIcon(packageManager).toBitmap().asImageBitmap() } catch (e: Exception) { null }
             )
         }.distinctBy { it.packageName }.sortedBy { it.appName }
     }
 
-    // ─── Demo mode data generators ──────────────────────────────────────
-
-    /**
-     * Seeded-random weekly data averaging 3-5h per day.
-     * Seed is based on the current week so values stay stable within the same week.
-     */
     fun getDemoWeeklyScreenTime(): List<Long> {
         val cal = Calendar.getInstance()
         val weekSeed = cal.get(Calendar.YEAR) * 100 + cal.get(Calendar.WEEK_OF_YEAR)
         val rng = java.util.Random(weekSeed.toLong())
         return (0 until 7).map {
-            // 3h to 5h in millis
             val minMs = 3 * 3_600_000L
             val rangeMs = 2 * 3_600_000L
             minMs + (rng.nextDouble() * rangeMs).toLong()
         }
     }
 
-    /**
-     * Fake per-app breakdown that totals roughly to today's demo screen time.
-     * Uses the real app list so icons/names look authentic.
-     */
     fun getDemoAppUsageStats(context: Context): List<AppUsageInfo> {
         val real = getAppUsageStats(context)
         if (real.isEmpty()) return real

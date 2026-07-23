@@ -37,7 +37,9 @@ android {
     }
     kotlinOptions {
         jvmTarget = "21"
+        freeCompilerArgs = freeCompilerArgs + listOf("-Xskip-metadata-version-check")
     }
+    
     buildFeatures {
         compose = true
     }
@@ -59,9 +61,13 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)
+    implementation("com.google.accompanist:accompanist-permissions:0.34.0")
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.mongodb.driver.kotlin.coroutine)
     implementation(libs.androidx.navigation.compose)
+    implementation("com.adamglin:phosphor-icon:1.0.0")
+    implementation("io.github.stoyan-vuchev:squircle-shape-android:4.0.0")
+    implementation("dev.chrisbanes.haze:haze:1.1.1")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

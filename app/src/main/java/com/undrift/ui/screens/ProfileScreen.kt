@@ -1,24 +1,19 @@
 package com.undrift.ui.screens
 
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import com.undrift.ui.components.SquircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.ColorLens
-import androidx.compose.material.icons.filled.EmojiEvents
-import androidx.compose.material.icons.filled.LocalFireDepartment
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Science
-import androidx.compose.material.icons.filled.SmartToy
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,17 +25,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.adamglin.PhosphorIcons
+import com.adamglin.phosphoricons.*
+import com.adamglin.phosphoricons.bold.*
+import com.adamglin.phosphoricons.regular.*
 import com.undrift.data.UserPreferences
 import com.undrift.data.UserProfile
-import com.undrift.ui.theme.Lavender
-import com.undrift.ui.theme.Orange
-import com.undrift.ui.theme.OrangeColor
-import com.undrift.ui.theme.SurfaceColor
-import com.undrift.ui.theme.TextSecondary
+import com.undrift.ui.theme.*
+import com.undrift.ui.components.premiumCard
+import com.undrift.utils.MotivationHelper
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.util.Locale
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun ProfileScreen(
     userProfile: UserProfile,
@@ -49,342 +47,337 @@ fun ProfileScreen(
     onLogout: () -> Unit,
     onNavigateToAgents: () -> Unit,
     onNavigateToShop: () -> Unit,
-    onColorSelect: (Long) -> Unit
+    onColorSelect: (Long) -> Unit,
+    animatedVisibilityScope: AnimatedVisibilityScope,
+    sharedTransitionScope: SharedTransitionScope
 ) {
     val scope = rememberCoroutineScope()
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .verticalScroll(rememberScrollState())
-            .padding(24.dp)
-    ) {
-        // Header
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Back", tint = Color.White)
-            }
-            Text(
-                text = "Profile",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-            IconButton(onClick = { }) {
-                Icon(Icons.Default.Share, contentDescription = "Share", tint = Color.White)
-            }
-        }
 
-        Spacer(modifier = Modifier.height(32.dp))
-
-        // Profile Info
+    Scaffold(
+        containerColor = DarkBackground
+    ) { paddingValues ->
         Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(paddingValues)
+                .padding(horizontal = 24.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(100.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-                contentAlignment = Alignment.Center
+            Spacer(modifier = Modifier.height(24.dp))
+            // Header Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .premiumCard(cornerRadius = 16.dp, padding = 0.dp)
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Back", tint = TextPrimary, modifier = Modifier.size(24.dp))
+                }
                 Text(
-                    text = if (userProfile.name.isNotEmpty()) userProfile.name.take(1).uppercase() else "U",
-                    style = MaterialTheme.typography.headlineLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold
+                    text = "Profile",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = TextPrimary
                 )
+                IconButton(
+                    onClick = { },
+                    modifier = Modifier
+                        .size(48.dp)
+                        .premiumCard(cornerRadius = 16.dp, padding = 0.dp)
+                ) {
+                    Icon(PhosphorIcons.Bold.ShareNetwork, contentDescription = "Share", tint = TextPrimary, modifier = Modifier.size(24.dp))
+                }
             }
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = userProfile.name.ifEmpty { "User" },
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-            Text(
-                text = "Focus Level: Pro ${userProfile.streakCount / 5 + 1}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
 
-        Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(32.dp))
 
-        // Streak & Calendar Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = SurfaceColor),
-            shape = RoundedCornerShape(24.dp)
-        ) {
+            // Profile info with Shared Avatar
             Column(
-                modifier = Modifier.padding(20.dp),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.LocalFireDepartment, contentDescription = null, tint = Orange, modifier = Modifier.size(24.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "${userProfile.streakCount} Day Streak",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                }
-                
-                Spacer(modifier = Modifier.height(20.dp))
-                
-                StreakCalendar(streakCount = userProfile.streakCount)
+                Text(
+                    text = userProfile.name.ifEmpty { "User" },
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = TextPrimary
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Focus Level: ${MotivationHelper.getFocusLevel(userProfile.streakCount)}",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = BrandSecondary
+                )
             }
-        }
 
-        Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(32.dp))
 
-        // Weekly Summary
-        Text("Weekly Summary", style = MaterialTheme.typography.titleMedium, color = Color.White)
-        Spacer(modifier = Modifier.height(16.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            val totalMins = userProfile.streakHistory.sum()
-            SummaryItem(modifier = Modifier.weight(1f), label = "TOTAL FOCUS", value = "${totalMins / 60}h ${totalMins % 60}m", trend = "This week")
-            SummaryItem(modifier = Modifier.weight(1f), label = "BALANCE", value = "${userProfile.points}", trend = "Focus Coins")
-        }
+            // Streak Card
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .premiumCard()
+            ) {
+                StreakCalendar(streakCount = userProfile.streakCount, bestStreak = userProfile.bestStreak)
+            }
 
-        Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(32.dp))
 
-        // Preferences
-        Text("Preferences", style = MaterialTheme.typography.titleMedium, color = Color.White)
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        // Color Selection
-        var showColorDialog by remember { mutableStateOf(false) }
-        PreferenceItem(
-            icon = Icons.Default.ColorLens,
-            title = "Theme Color",
-            subtitle = if (userProfile.themeColor == 0xFFCE705D) "Orange" else "Lavender",
-            onClick = { showColorDialog = true }
-        )
+            // Weekly Summary
+            Text(
+                text = "WEEKLY SUMMARY",
+                style = MaterialTheme.typography.labelMedium,
+                color = TextSecondary,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                val totalMins = userProfile.streakHistory.sum()
+                SummaryItem(modifier = Modifier.weight(1f), label = "TOTAL FOCUS", value = "${totalMins / 60}h ${totalMins % 60}m", trend = "This week")
+                SummaryItem(modifier = Modifier.weight(1f), label = "BALANCE", value = "${userProfile.points}", trend = "Focus Coins")
+            }
 
-        if (showColorDialog) {
-            AlertDialog(
-                onDismissRequest = { showColorDialog = false },
-                title = { Text("Select Theme Color", color = Color.White) },
-                containerColor = SurfaceColor,
-                text = {
-                    Column {
-                        ColorOption("Orange", OrangeColor, userProfile.themeColor == 0xFFCE705D) {
-                            onColorSelect(0xFFCE705D)
-                            showColorDialog = false
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        ColorOption("Lavender", Lavender, userProfile.themeColor == 0xFF685DCE) {
-                            onColorSelect(0xFF685DCE)
-                            showColorDialog = false
-                        }
-                    }
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // Preferences Section
+            Text(
+                text = "PREFERENCES",
+                style = MaterialTheme.typography.labelMedium,
+                color = TextSecondary,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+            
+            // Theme selector item
+            var showThemeDialog by remember { mutableStateOf(false) }
+            PreferenceItem(
+                icon = PhosphorIcons.Bold.Palette,
+                title = "App Theme",
+                subtitle = when (userProfile.themeMode) {
+                    1 -> "Light Mode"
+                    2 -> "Dark Mode"
+                    else -> "System Default"
                 },
-                confirmButton = {
-                    TextButton(onClick = { showColorDialog = false }) {
-                        Text("Cancel", color = MaterialTheme.colorScheme.primary)
+                onClick = { showThemeDialog = true }
+            )
+
+            if (showThemeDialog) {
+                AlertDialog(
+                    onDismissRequest = { showThemeDialog = false },
+                    title = { Text("Select Theme", color = TextPrimary, style = MaterialTheme.typography.titleLarge) },
+                    containerColor = SurfaceColor,
+                    text = {
+                        Column {
+                            ThemeOption("System Default", userProfile.themeMode == 0) {
+                                scope.launch { userPreferences.setThemeMode(0) }
+                                showThemeDialog = false
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            ThemeOption("Light Mode", userProfile.themeMode == 1) {
+                                scope.launch { userPreferences.setThemeMode(1) }
+                                showThemeDialog = false
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            ThemeOption("Dark Mode", userProfile.themeMode == 2) {
+                                scope.launch { userPreferences.setThemeMode(2) }
+                                showThemeDialog = false
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showThemeDialog = false }) {
+                            Text("Cancel", color = TextSecondary)
+                        }
                     }
+                )
+            }
+
+            PreferenceItem(
+                icon = PhosphorIcons.Bold.Robot, 
+                title = "AI Agent Settings", 
+                subtitle = "Focus on performance",
+                onClick = onNavigateToAgents
+            )
+            
+            var notificationsEnabled by remember { mutableStateOf(true) }
+            PreferenceItem(
+                icon = PhosphorIcons.Bold.Bell, 
+                title = "Notifications", 
+                subtitle = if (notificationsEnabled) "Smart reminders enabled" else "Notifications disabled", 
+                showSwitch = true,
+                checked = notificationsEnabled,
+                onCheckedChange = { notificationsEnabled = it }
+            )
+            
+            PreferenceItem(
+                icon = PhosphorIcons.Bold.Trophy, 
+                title = "Rewards Program", 
+                subtitle = "${userProfile.points} points available",
+                onClick = onNavigateToShop
+            )
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // Misc Section
+            Text(
+                text = "MISC",
+                style = MaterialTheme.typography.labelMedium,
+                color = TextSecondary,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+
+            PreferenceItem(
+                icon = PhosphorIcons.Bold.Flask,
+                title = "Demo Mode",
+                subtitle = if (userProfile.demoMode) "Showing sample data" else "Off",
+                showSwitch = true,
+                checked = userProfile.demoMode,
+                onCheckedChange = { enabled ->
+                    scope.launch { userPreferences.setDemoMode(enabled) }
                 }
             )
+
+            Spacer(modifier = Modifier.height(40.dp))
+            
+            Text(
+                text = "Log Out",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onLogout() }
+                    .padding(vertical = 12.dp),
+                textAlign = TextAlign.Center,
+                color = Color(0xFFFF453A),
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp
+            )
+            
+            Spacer(modifier = Modifier.height(100.dp))
         }
-
-        PreferenceItem(
-            icon = Icons.Default.SmartToy, 
-            title = "AI Agent Settings", 
-            subtitle = "Focus on performance",
-            onClick = onNavigateToAgents
-        )
-        
-        var notificationsEnabled by remember { mutableStateOf(true) }
-        PreferenceItem(
-            icon = Icons.Default.Notifications, 
-            title = "Notifications", 
-            subtitle = if (notificationsEnabled) "Smart reminders enabled" else "Notifications disabled", 
-            showSwitch = true,
-            checked = notificationsEnabled,
-            onCheckedChange = { notificationsEnabled = it }
-        )
-        
-        PreferenceItem(
-            icon = Icons.Default.EmojiEvents, 
-            title = "Rewards Program", 
-            subtitle = "${userProfile.points} points available",
-            onClick = onNavigateToShop
-        )
-
-        Spacer(modifier = Modifier.height(32.dp))
-
-        // Misc
-        Text("Misc", style = MaterialTheme.typography.titleMedium, color = Color.White)
-        Spacer(modifier = Modifier.height(16.dp))
-
-        PreferenceItem(
-            icon = Icons.Default.Science,
-            title = "Demo Mode",
-            subtitle = if (userProfile.demoMode) "Showing sample data" else "Off",
-            showSwitch = true,
-            checked = userProfile.demoMode,
-            onCheckedChange = { enabled ->
-                scope.launch { userPreferences.setDemoMode(enabled) }
-            }
-        )
-
-        Spacer(modifier = Modifier.height(32.dp))
-        
-        Text(
-            text = "Log Out",
-            modifier = Modifier.fillMaxWidth().clickable { onLogout() },
-            textAlign = TextAlign.Center,
-            color = Color.Red.copy(alpha = 0.7f),
-            fontWeight = FontWeight.Bold
-        )
-        
-        Spacer(modifier = Modifier.height(100.dp))
     }
 }
 
 @Composable
-fun ColorOption(name: String, color: Color, isSelected: Boolean, onClick: () -> Unit) {
+fun ThemeOption(name: String, isSelected: Boolean, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (isSelected) color.copy(alpha = 0.2f) else Color.Transparent)
+            .clip(SquircleShape())
+            .background(if (isSelected) SurfaceVariantColor else Color.Transparent)
             .clickable { onClick() }
-            .padding(12.dp),
+            .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(24.dp)
-                .clip(CircleShape)
-                .background(color)
-        )
-        Spacer(modifier = Modifier.width(16.dp))
-        Text(name, color = Color.White, modifier = Modifier.weight(1f))
+        Text(name, color = TextPrimary, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         if (isSelected) {
-            Icon(Icons.Default.Notifications, contentDescription = null, tint = color, modifier = Modifier.size(20.dp))
+            Icon(PhosphorIcons.Bold.Check, contentDescription = null, tint = BrandPrimaryColor, modifier = Modifier.size(20.dp))
         }
     }
 }
 
 @Composable
-fun StreakCalendar(streakCount: Int) {
+fun StreakCalendar(streakCount: Int, bestStreak: Int) {
     val calendar = Calendar.getInstance()
-    val currentMonthName = calendar.getDisplayName(Calendar.MONTH, Calendar.LONG, Locale.getDefault())
-    val currentYear = calendar.get(Calendar.YEAR)
-    val today = calendar.get(Calendar.DAY_OF_MONTH)
+    // Determine today's index where Monday = 0, Sunday = 6
+    val todayDayOfWeek = (calendar.get(Calendar.DAY_OF_WEEK) + 5) % 7 
+    val days = listOf("M", "T", "W", "T", "F", "S", "S")
     
-    // Calculate first day of week and days in month
-    val firstDayOfMonth = calendar.clone() as Calendar
-    firstDayOfMonth.set(Calendar.DAY_OF_MONTH, 1)
-    val firstDayOfWeek = firstDayOfMonth.get(Calendar.DAY_OF_WEEK) - 1 // 0 for Sunday
-    val daysInMonth = calendar.getActualMaximum(Calendar.DAY_OF_MONTH)
-
-    Column {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Text("Your Week Streak", style = MaterialTheme.typography.titleMedium, color = TextSecondary)
+        }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Bottom
+        ) {
             Text(
-                text = currentMonthName ?: "Month",
-                style = MaterialTheme.typography.titleSmall,
-                color = Color.White,
-                fontWeight = FontWeight.Bold
+                text = streakCount.toString(),
+                style = MaterialTheme.typography.displayLarge.copy(fontSize = 72.sp, fontWeight = FontWeight.Medium),
+                color = TextPrimary
             )
+            Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = currentYear.toString(),
-                style = MaterialTheme.typography.labelMedium,
-                color = TextSecondary
+                text = "days",
+                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                color = TextPrimary,
+                modifier = Modifier.padding(bottom = 12.dp)
             )
         }
         
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(48.dp))
         
-        // Day Labels
-        Row(modifier = Modifier.fillMaxWidth()) {
-            listOf("S", "M", "T", "W", "T", "F", "S").forEach { day ->
-                Text(
-                    text = day,
-                    modifier = Modifier.weight(1f),
-                    textAlign = TextAlign.Center,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = TextSecondary
-                )
-            }
-        }
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        // Grid of Days
-        val rows = (daysInMonth + firstDayOfWeek + 6) / 7
-        for (row in 0 until rows) {
-            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                for (col in 0 until 7) {
-                    val cellIndex = row * 7 + col
-                    val dayNum = cellIndex - firstDayOfWeek + 1
-                    
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            days.forEachIndexed { index, day ->
+                val isToday = index == todayDayOfWeek
+                // A day is considered completed if it falls within the current streak length
+                // counting backwards from today.
+                val completed = streakCount > (todayDayOfWeek - index) && index <= todayDayOfWeek
+                
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(
-                        modifier = Modifier.weight(1f).aspectRatio(1f),
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(
+                                when {
+                                    completed -> BrandPrimaryColor
+                                    isToday -> BorderColor
+                                    else -> SurfaceVariantColor
+                                }
+                            ),
                         contentAlignment = Alignment.Center
                     ) {
-                        if (dayNum in 1..daysInMonth) {
-                            val isToday = dayNum == today
-                            // Logic: If day is today or within the last 'streakCount' days, mark it as success
-                            val isStreakDay = dayNum <= today && dayNum > (today - streakCount)
-                            
-                            Box(
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        when {
-                                            isStreakDay -> MaterialTheme.colorScheme.primary
-                                            isToday -> Color.White.copy(alpha = 0.1f)
-                                            else -> Color.Transparent
-                                        }
-                                    )
-                                    .border(
-                                        width = if (isToday) 1.dp else 0.dp,
-                                        color = if (isToday) MaterialTheme.colorScheme.primary else Color.Transparent,
-                                        shape = CircleShape
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = dayNum.toString(),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = if (isStreakDay) Color.White else if (isToday) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.6f),
-                                    fontWeight = if (isToday || isStreakDay) FontWeight.Bold else FontWeight.Normal
-                                )
-                            }
+                        if (completed) {
+                            Icon(PhosphorIcons.Bold.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                         }
                     }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = day,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isToday) TextPrimary else TextSecondary,
+                        fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal
+                    )
                 }
             }
         }
+        
+        Spacer(modifier = Modifier.height(32.dp))
+        
+        Text(
+            text = MotivationHelper.getStreakMessage(streakCount, bestStreak),
+            style = MaterialTheme.typography.bodyLarge,
+            color = TextPrimary,
+            textAlign = TextAlign.Start,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
 
 @Composable
 fun SummaryItem(modifier: Modifier, label: String, value: String, trend: String) {
-    Card(
-        modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = SurfaceColor),
-        shape = RoundedCornerShape(16.dp)
+    Box(
+        modifier = modifier.premiumCard()
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column {
             Text(label, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
-            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White)
-            Text(trend, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(value, style = MaterialTheme.typography.headlineLarge, color = TextPrimary)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(trend, style = MaterialTheme.typography.labelMedium, color = BrandSecondary)
         }
     }
 }
@@ -403,37 +396,38 @@ fun PreferenceItem(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(SurfaceColor)
-            .clickable(enabled = !showSwitch) { onClick() }
-            .padding(16.dp),
+            .premiumCard(padding = 16.dp, cornerRadius = 16.dp)
+            .clickable(enabled = !showSwitch) { onClick() },
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
                 .size(40.dp)
-                .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.2f)),
+                .clip(SquircleShape())
+                .background(SurfaceVariantColor),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Icon(icon, contentDescription = null, tint = BrandPrimary, modifier = Modifier.size(20.dp))
         }
         Spacer(modifier = Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleSmall, color = Color.White)
-            Text(subtitle, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+            Text(title, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold), color = TextPrimary)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
         }
         if (showSwitch) {
             Switch(
                 checked = checked, 
                 onCheckedChange = onCheckedChange,
                 colors = SwitchDefaults.colors(
-                    checkedThumbColor = MaterialTheme.colorScheme.primary,
-                    checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                    checkedThumbColor = DarkBackground,
+                    checkedTrackColor = BrandPrimary,
+                    uncheckedThumbColor = TextSecondary,
+                    uncheckedTrackColor = SurfaceVariantColor
                 )
             )
         } else {
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = TextSecondary)
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(20.dp))
         }
     }
 }
