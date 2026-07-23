@@ -66,6 +66,7 @@ class MainActivity : ComponentActivity() {
     
     // State to track the latest intent for navigation
     private var intentState = mutableStateOf<Intent?>(null)
+    private var downloadReceiver: android.content.BroadcastReceiver? = null
 
     @OptIn(ExperimentalSharedTransitionApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -85,6 +86,35 @@ class MainActivity : ComponentActivity() {
             registerReceiver(receiver, android.content.IntentFilter("com.undrift.RESTORE_STREAK"), android.content.Context.RECEIVER_EXPORTED)
         } else {
             androidx.core.content.ContextCompat.registerReceiver(this, receiver, android.content.IntentFilter("com.undrift.RESTORE_STREAK"), androidx.core.content.ContextCompat.RECEIVER_EXPORTED)
+        }
+
+        downloadReceiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (intent.action == android.app.DownloadManager.ACTION_DOWNLOAD_COMPLETE) {
+                    val downloadId = intent.getLongExtra(android.app.DownloadManager.EXTRA_DOWNLOAD_ID, -1)
+                    if (downloadId != -1L) {
+                        val downloadManager = getSystemService(Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
+                        val uri = downloadManager.getUriForDownloadedFile(downloadId)
+                        if (uri != null) {
+                            val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                                setDataAndType(uri, "application/vnd.android.package-archive")
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+                            }
+                            try {
+                                startActivity(installIntent)
+                            } catch (e: Exception) {
+                                Log.e("MainActivity", "Failed to start install intent", e)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(downloadReceiver, android.content.IntentFilter(android.app.DownloadManager.ACTION_DOWNLOAD_COMPLETE), android.content.Context.RECEIVER_EXPORTED)
+        } else {
+            androidx.core.content.ContextCompat.registerReceiver(this, downloadReceiver!!, android.content.IntentFilter(android.app.DownloadManager.ACTION_DOWNLOAD_COMPLETE), androidx.core.content.ContextCompat.RECEIVER_EXPORTED)
         }
 
         enableEdgeToEdge()
@@ -310,6 +340,11 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         intentState.value = intent
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        downloadReceiver?.let { unregisterReceiver(it) }
     }
 
     private fun processIntent(intent: Intent, navController: NavHostController) {
