@@ -34,7 +34,10 @@ import com.undrift.data.UserProfile
 import com.undrift.ui.theme.*
 import com.undrift.ui.components.premiumCard
 import com.undrift.utils.MotivationHelper
+import com.undrift.utils.UpdateManager
 import kotlinx.coroutines.launch
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
 import java.util.Calendar
 import java.util.Locale
 
@@ -235,6 +238,25 @@ fun ProfileScreen(
                 checked = userProfile.demoMode,
                 onCheckedChange = { enabled ->
                     scope.launch { userPreferences.setDemoMode(enabled) }
+                }
+            )
+
+            val context = LocalContext.current
+            PreferenceItem(
+                icon = PhosphorIcons.Bold.DownloadSimple,
+                title = "Check for Updates",
+                subtitle = "Ensure you have the latest features",
+                onClick = {
+                    Toast.makeText(context, "Checking for updates...", Toast.LENGTH_SHORT).show()
+                    scope.launch {
+                        val url = UpdateManager.checkForUpdates(context)
+                        if (url != null) {
+                            Toast.makeText(context, "Downloading update...", Toast.LENGTH_SHORT).show()
+                            UpdateManager.downloadUpdate(context, url)
+                        } else {
+                            Toast.makeText(context, "Already on the latest version", Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 }
             )
 
