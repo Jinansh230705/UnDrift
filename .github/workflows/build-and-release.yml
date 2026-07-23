@@ -1,0 +1,83 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - '**/build.gradle.kts' # Prevents infinite build loops from the version bump commit
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Needed to push version bump and create releases
+      
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required to generate accurate release notes from history
+          token: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Bump Version
+        id: bump
+        run: |
+          cat << 'EOF' > bump.py
+          import re
+          import os
+          
+          with open('app/build.gradle.kts', 'r') as f: 
+              content = f.read()
+              
+          c_match = re.search(r'versionCode\s*=\s*(\d+)', content)
+          n_match = re.search(r'versionName\s*=\s*"([^"]+)"', content)
+          
+          if c_match and n_match:
+              new_code = int(c_match.group(1)) + 1
+              parts = n_match.group(1).split('.')
+              
+              if len(parts) == 3: 
+                  parts[2] = str(int(parts[2]) + 1)
+              new_name = '.'.join(parts) if len(parts) == 3 else n_match.group(1) + "-1"
+              
+              content = re.sub(r'versionCode\s*=\s*\d+', f'versionCode = {new_code}', content)
+              content = re.sub(r'versionName\s*=\s*"[^"]+"', f'versionName = "{new_name}"', content)
+              
+              with open('app/build.gradle.kts', 'w') as f: 
+                  f.write(content)
+                  
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
+                  print(f"NEW_VERSION={new_name}", file=fh)
+                  print(f"NEW_VERSION_CODE={new_code}", file=fh)
+          EOF
+          python3 bump.py
+          rm bump.py
+
+      - name: Commit and Push Version Bump
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add app/build.gradle.kts
+          git commit -m "chore: bump version to v${{ steps.bump.outputs.NEW_VERSION }} [skip ci]" || echo "No changes to commit"
+          git push
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug
+
+      - name: Generate Release Notes and Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.bump.outputs.NEW_VERSION }}
+          name: Release v${{ steps.bump.outputs.NEW_VERSION }}
+          generate_release_notes: true
+          files: app/build/outputs/apk/debug/app-debug.apk
