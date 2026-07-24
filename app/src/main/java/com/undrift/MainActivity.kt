@@ -348,6 +348,13 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun processIntent(intent: Intent, navController: NavHostController) {
+        val action = intent.getStringExtra("ACTION")
+        val updateUrl = intent.getStringExtra("UPDATE_URL")
+        if (action == "DOWNLOAD_UPDATE" && !updateUrl.isNullOrEmpty()) {
+            android.widget.Toast.makeText(this, "Downloading update...", android.widget.Toast.LENGTH_LONG).show()
+            com.undrift.utils.UpdateManager.downloadUpdate(this, updateUrl)
+        }
+
         val screen = intent.getStringExtra("SCREEN")
         if (screen == "nudge") {
             val pkg = intent.getStringExtra("PACKAGE") ?: ""
