@@ -22,9 +22,31 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            val keystoreFile = rootProject.file("release.keystore")
+            if (keystoreFile.exists()) {
+                storeFile = keystoreFile
+                storePassword = "undrift123"
+                keyAlias = "undrift"
+                keyPassword = "undrift123"
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            val keystoreFile = rootProject.file("release.keystore")
+            if (keystoreFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
         release {
             isMinifyEnabled = false
+            val keystoreFile = rootProject.file("release.keystore")
+            if (keystoreFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -47,6 +69,9 @@ android {
         resources {
             excludes += "/META-INF/native-image/native-image.properties"
             excludes += "/META-INF/native-image/reflect-config.json"
+        }
+        jniLibs {
+            useLegacyPackaging = true
         }
     }
 }

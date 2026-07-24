@@ -112,9 +112,9 @@ class MainActivity : ComponentActivity() {
         }
         
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(downloadReceiver, android.content.IntentFilter(android.app.DownloadManager.ACTION_DOWNLOAD_COMPLETE), android.content.Context.RECEIVER_EXPORTED)
+            registerReceiver(downloadReceiver, android.content.IntentFilter(android.app.DownloadManager.ACTION_DOWNLOAD_COMPLETE), android.content.Context.RECEIVER_NOT_EXPORTED)
         } else {
-            androidx.core.content.ContextCompat.registerReceiver(this, downloadReceiver!!, android.content.IntentFilter(android.app.DownloadManager.ACTION_DOWNLOAD_COMPLETE), androidx.core.content.ContextCompat.RECEIVER_EXPORTED)
+            androidx.core.content.ContextCompat.registerReceiver(this, downloadReceiver!!, android.content.IntentFilter(android.app.DownloadManager.ACTION_DOWNLOAD_COMPLETE), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
         }
 
         enableEdgeToEdge()
@@ -382,10 +382,14 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startMonitoringService() {
-        val serviceIntent = Intent(this, FocusService::class.java).apply {
-            action = "START_MONITORING"
+        try {
+            val serviceIntent = Intent(this, FocusService::class.java).apply {
+                action = "START_MONITORING"
+            }
+            androidx.core.content.ContextCompat.startForegroundService(this, serviceIntent)
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Failed to start monitoring foreground service", e)
         }
-        androidx.core.content.ContextCompat.startForegroundService(this, serviceIntent)
     }
 }
 
