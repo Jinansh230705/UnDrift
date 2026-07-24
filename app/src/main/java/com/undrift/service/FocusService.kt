@@ -268,7 +268,7 @@ class FocusService : Service() {
         val endTime = System.currentTimeMillis()
         val startTime = endTime - 30_000  // 30s window for reliability
 
-        val events = usm.queryEvents(startTime, endTime)
+        val events = usm.queryEvents(startTime, endTime) ?: return null
         val event = UsageEvents.Event()
         var lastPkg: String? = null
 
@@ -614,18 +614,25 @@ class FocusService : Service() {
         val text = if (reason == "LIMIT_EXCEEDED") "You've reached your limit. Tap to block."
                    else "This app is blocked. Tap to go back."
 
-        val notification = NotificationCompat.Builder(this, "focus_channel")
-            .setSmallIcon(android.R.drawable.ic_lock_lock)
-            .setContentTitle(title)
-            .setContentText(text)
-            .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setCategory(NotificationCompat.CATEGORY_ALARM)
-            .setFullScreenIntent(pi, true)
-            .setAutoCancel(false)
-            .build()
+        try {
+            val builder = NotificationCompat.Builder(this, "focus_channel")
+                .setSmallIcon(android.R.drawable.ic_lock_lock)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setCategory(NotificationCompat.CATEGORY_ALARM)
+                .setContentIntent(pi)
+                .setAutoCancel(false)
 
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.notify(blockedPkg.hashCode(), notification)
+            if (Build.VERSION.SDK_INT < 34 || androidx.core.content.ContextCompat.checkSelfPermission(this, "android.permission.USE_FULL_SCREEN_INTENT") == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                builder.setFullScreenIntent(pi, true)
+            }
+
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.notify(blockedPkg.hashCode(), builder.build())
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to show fallback notification", e)
+        }
     }
 
     // ─── Notification channel & service plumbing ─────────────────────────

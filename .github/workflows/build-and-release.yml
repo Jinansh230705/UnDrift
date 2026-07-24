@@ -6,6 +6,15 @@ on:
       - master
     paths-ignore:
       - '**/build.gradle.kts' # Prevents infinite build loops from the version bump commit
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Release Channel (e.g. stable, beta, alpha, weekly, nightly)'
+        required: false
+        default: 'stable'
+
+env:
+  RELEASE_CHANNEL: ${{ github.event.inputs.channel || 'stable' }}
 
 jobs:
   build-and-release:
@@ -26,13 +35,15 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Bump Version
+      - name: Bump Version with Release Channel
         id: bump
         run: |
           cat << 'EOF' > bump.py
           import re
           import os
-          
+
+          channel = os.environ.get('RELEASE_CHANNEL', 'stable').strip()
+
           with open('app/build.gradle.kts', 'r') as f: 
               content = f.read()
               
@@ -41,11 +52,19 @@ jobs:
           
           if c_match and n_match:
               new_code = int(c_match.group(1)) + 1
-              parts = n_match.group(1).split('.')
+              raw_name = n_match.group(1)
               
-              if len(parts) == 3: 
+              # Strip existing channel suffix if present (e.g. 1.0.6-stable -> 1.0.6)
+              base_ver = raw_name.split('-')[0]
+              parts = base_ver.split('.')
+              
+              if len(parts) >= 3: 
                   parts[2] = str(int(parts[2]) + 1)
-              new_name = '.'.join(parts) if len(parts) == 3 else n_match.group(1) + "-1"
+                  base_new = '.'.join(parts)
+              else:
+                  base_new = base_ver + ".1"
+              
+              new_name = f"{base_new}-{channel}" if channel else base_new
               
               content = re.sub(r'versionCode\s*=\s*\d+', f'versionCode = {new_code}', content)
               content = re.sub(r'versionName\s*=\s*"[^"]+"', f'versionName = "{new_name}"', content)
@@ -69,16 +88,86 @@ jobs:
           git pull --rebase origin master
           git push
 
+      - name: Generate Detailed Changelog
+        id: changelog
+        run: |
+          cat << 'EOF' > generate_notes.py
+          import subprocess
+          import os
+          import re
+
+          # Try to get previous tag
+          try:
+              tags = subprocess.check_output(["git", "tag", "-l", "v*"], text=True).strip().split('\n')
+              tags = [t for t in tags if t]
+              prev_tag = tags[-1] if tags else None
+          except Exception:
+              prev_tag = None
+
+          if prev_tag:
+              log_range = f"{prev_tag}..HEAD"
+          else:
+              log_range = "HEAD~15..HEAD"
+
+          try:
+              raw_log = subprocess.check_output(["git", "log", log_range, "--no-merges", "--pretty=format:%h|%s"], text=True).strip().split('\n')
+          except Exception:
+              raw_log = []
+
+          features = []
+          fixes = []
+          maintenance = []
+          other = []
+
+          for line in raw_log:
+              if not line or '|' not in line:
+                  continue
+              h, s = line.split('|', 1)
+              
+              # Skip automated bump commits
+              if "skip ci" in s.lower() or "bump version" in s.lower():
+                  continue
+              
+              entry = f"- {s} (`{h}`)"
+              if re.match(r'^(feat|feature)', s, re.I):
+                  features.append(entry)
+              elif re.match(r'^(fix|bug|sec|security)', s, re.I):
+                  fixes.append(entry)
+              elif re.match(r'^(chore|ci|refactor|docs|style|perf)', s, re.I):
+                  maintenance.append(entry)
+              else:
+                  other.append(entry)
+
+          sections = []
+          if features:
+              sections.append("### 🚀 Features & Enhancements\n" + "\n".join(features))
+          if fixes:
+              sections.append("### 🐛 Bug Fixes & Security Hardening\n" + "\n".join(fixes))
+          if maintenance:
+              sections.append("### 🛠 Maintenance & Performance\n" + "\n".join(maintenance))
+          if other:
+              sections.append("### 📦 Other Changes\n" + "\n".join(other))
+
+          if not sections:
+              sections.append("### 📋 Changes in this Release\n- General performance and stability improvements.")
+
+          notes = "\n\n".join(sections)
+          with open("RELEASE_NOTES.md", "w", encoding="utf-8") as f:
+              f.write(notes)
+          EOF
+          python3 generate_notes.py
+          rm generate_notes.py
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build Debug APK
+      - name: Build Signed APK
         run: ./gradlew assembleDebug
 
-      - name: Generate Release Notes and Publish
+      - name: Publish GitHub Release with Custom Notes
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.bump.outputs.NEW_VERSION }}
           name: Release v${{ steps.bump.outputs.NEW_VERSION }}
-          generate_release_notes: true
+          body_path: RELEASE_NOTES.md
           files: app/build/outputs/apk/debug/app-debug.apk

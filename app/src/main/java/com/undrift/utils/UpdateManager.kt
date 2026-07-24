@@ -61,8 +61,15 @@ object UpdateManager {
 
     private fun isNewerVersion(current: String, fetched: String): Boolean {
         try {
-            val currParts = current.split(".").map { it.toIntOrNull() ?: 0 }
-            val fetchParts = fetched.split(".").map { it.toIntOrNull() ?: 0 }
+            val parseVersion = { ver: String ->
+                ver.replace("^v".toRegex(), "")
+                    .split("-")[0]
+                    .split(".")
+                    .map { part -> part.filter { it.isDigit() }.toIntOrNull() ?: 0 }
+            }
+            
+            val currParts = parseVersion(current)
+            val fetchParts = parseVersion(fetched)
             
             val maxLength = maxOf(currParts.size, fetchParts.size)
             for (i in 0 until maxLength) {
@@ -73,7 +80,6 @@ object UpdateManager {
             }
             return false
         } catch (e: Exception) {
-            // Fallback to simple string comparison if parsing fails
             return fetched > current
         }
     }
