@@ -32,29 +32,7 @@ object UsageStatsHelper {
 
     private val systemExclusions = setOf(
         "android",
-        "com.android.systemui",
-        "com.android.settings",
-        "com.android.phone",
-        "com.android.dialer",
-        "com.android.incallui",
-        "com.android.server.telecom",
-        "com.google.android.gms",
-        "com.google.android.gsf",
-        "com.google.android.inputmethod.latin",
-        "com.google.android.apps.nexuslauncher",
-        "com.google.android.packageinstaller",
-        "com.android.launcher",
-        "com.android.launcher3",
-        "com.sec.android.app.launcher",
-        "com.miui.home",
-        "com.android.packageinstaller",
-        "com.android.permissioncontroller",
-        "com.android.shell",
-        "com.android.externalstorage",
-        "com.android.providers.media",
-        "com.android.providers.contacts",
-        "com.android.providers.telephony",
-        "com.android.providers.downloads"
+        "com.android.systemui"
     )
 
     private val appInfoCache = mutableMapOf<String, AppCacheEntry>()
@@ -76,7 +54,7 @@ object UsageStatsHelper {
             var iconBitmap: ImageBitmap? = null
             
             if (loadFullDetails) {
-                appName = packageManager.getApplicationLabel(appInfo).toString()
+                appName = if (packageName == context.packageName) "UnDrift" else packageManager.getApplicationLabel(appInfo).toString()
                 iconBitmap = try { packageManager.getApplicationIcon(packageName).toBitmap().asImageBitmap() } catch (e: Exception) { null }
             }
             
@@ -98,7 +76,7 @@ object UsageStatsHelper {
             return entry
         } catch (e: Exception) {
             val entry = AppCacheEntry(
-                appName = packageName,
+                appName = if (packageName == context.packageName) "UnDrift" else packageName,
                 iconBitmap = null,
                 isSystemAndNotUpdated = false,
                 hasLaunchIntent = hasLaunchIntent,
@@ -112,7 +90,7 @@ object UsageStatsHelper {
     private fun calculateForegroundTimesFromEvents(
         usm: UsageStatsManager, startTime: Long, endTime: Long
     ): Map<String, Long> {
-        val events = usm.queryEvents(startTime, endTime)
+        val events = usm.queryEvents(startTime, endTime) ?: return emptyMap()
         val event = UsageEvents.Event()
         val foregroundTimes = mutableMapOf<String, Long>()
         val lastResumed = mutableMapOf<String, Long>()
@@ -153,7 +131,7 @@ object UsageStatsHelper {
         val startTime = calendar.timeInMillis
         val endTime = System.currentTimeMillis()
 
-        val events = usm.queryEvents(startTime, endTime)
+        val events = usm.queryEvents(startTime, endTime) ?: return 0L
         val event = UsageEvents.Event()
         var totalTime = 0L
         var lastResumedTime: Long? = null
@@ -203,17 +181,15 @@ object UsageStatsHelper {
 
         return foregroundTimes.mapNotNull { (packageName, usageTime) ->
             if (systemExclusions.contains(packageName)) return@mapNotNull null
-            if (packageName == context.packageName) return@mapNotNull null
             if (packageName == currentLauncher) return@mapNotNull null
-            if (usageTime <= 5000) return@mapNotNull null
+            if (usageTime <= 1000) return@mapNotNull null
 
             val cacheEntry = getAppCacheEntry(context, packageName, loadFullDetails = true)
-            if (!cacheEntry.hasLaunchIntent) return@mapNotNull null
-            if (cacheEntry.isSystemAndNotUpdated) return@mapNotNull null
+            if (!cacheEntry.hasLaunchIntent && packageName != context.packageName) return@mapNotNull null
 
             AppUsageInfo(
                 packageName = packageName,
-                appName = cacheEntry.appName ?: packageName,
+                appName = cacheEntry.appName ?: if (packageName == context.packageName) "UnDrift" else packageName,
                 usageTimeMillis = usageTime,
                 iconBitmap = cacheEntry.iconBitmap
             )
@@ -258,13 +234,11 @@ object UsageStatsHelper {
             var dayTotal = 0L
             for ((pkg, time) in foregroundTimes) {
                 if (systemExclusions.contains(pkg)) continue
-                if (pkg == context.packageName) continue
                 if (pkg == currentLauncher) continue
-                if (time <= 5000) continue
+                if (time <= 1000) continue
                 
                 val cacheEntry = getAppCacheEntry(context, pkg, loadFullDetails = false)
-                if (!cacheEntry.hasLaunchIntent) continue
-                if (cacheEntry.isSystemAndNotUpdated) continue
+                if (!cacheEntry.hasLaunchIntent && pkg != context.packageName) continue
                 
                 dayTotal += time
             }
@@ -287,12 +261,11 @@ object UsageStatsHelper {
         return launchables.mapNotNull { resolveInfo ->
             val packageName = resolveInfo.activityInfo.packageName
             if (systemExclusions.contains(packageName)) return@mapNotNull null
-            if (packageName == context.packageName) return@mapNotNull null
             if (packageName == currentLauncher) return@mapNotNull null
 
             AppUsageInfo(
                 packageName = packageName,
-                appName = resolveInfo.loadLabel(packageManager).toString(),
+                appName = if (packageName == context.packageName) "UnDrift" else resolveInfo.loadLabel(packageManager).toString(),
                 usageTimeMillis = 0,
                 iconBitmap = try { resolveInfo.loadIcon(packageManager).toBitmap().asImageBitmap() } catch (e: Exception) { null }
             )
