@@ -97,6 +97,7 @@ class FocusService : Service() {
         }
 
         startBackgroundMonitoring()
+        startPeriodicUpdateCheck()
     }
 
     private fun startBackgroundMonitoring() {
@@ -112,6 +113,52 @@ class FocusService : Service() {
                 delay(1000)
             }
         }
+    }
+
+    private var lastNotifiedUpdateUrl: String? = null
+
+    private fun startPeriodicUpdateCheck() {
+        serviceScope.launch {
+            delay(10_000)
+            while (isActive) {
+                try {
+                    val updateUrl = com.undrift.utils.UpdateManager.checkForUpdates(this@FocusService)
+                    if (updateUrl != null && updateUrl != lastNotifiedUpdateUrl) {
+                        lastNotifiedUpdateUrl = updateUrl
+                        showUpdateAvailableNotification(updateUrl)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Periodic update check error: ${e.message}")
+                }
+                delay(3 * 3600 * 1000L)
+            }
+        }
+    }
+
+    private fun showUpdateAvailableNotification(downloadUrl: String) {
+        val intent = Intent(this, com.undrift.MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("ACTION", "DOWNLOAD_UPDATE")
+            putExtra("UPDATE_URL", downloadUrl)
+        }
+        val pi = PendingIntent.getActivity(
+            this,
+            999,
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val notification = NotificationCompat.Builder(this, "focus_channel")
+            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setContentTitle("🚀 UnDrift Update Available")
+            .setContentText("A new update is ready! Tap to download and install.")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(pi)
+            .setAutoCancel(true)
+            .build()
+
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.notify(999, notification)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

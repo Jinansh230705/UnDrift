@@ -22,17 +22,28 @@ object UpdateManager {
     suspend fun checkForUpdates(context: Context): String? {
         return withContext(Dispatchers.IO) {
             try {
-                val jsonStr = URL(GITHUB_API_URL).readText()
+                val url = URL(GITHUB_API_URL)
+                val conn = url.openConnection() as java.net.HttpURLConnection
+                conn.setRequestProperty("User-Agent", "UnDrift-App")
+                conn.setRequestProperty("Accept", "application/vnd.github.v3+json")
+                conn.connectTimeout = 10000
+                conn.readTimeout = 10000
+
+                val jsonStr = conn.inputStream.bufferedReader().use { it.readText() }
                 val json = JSONObject(jsonStr)
                 
-                val tagName = json.getString("tag_name").replace("v", "")
+                val tagName = json.getString("tag_name")
                 val currentVersion = context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: ""
+
+                Log.d(TAG, "Current version: '$currentVersion', Latest release tag: '$tagName'")
 
                 if (isNewerVersion(currentVersion, tagName)) {
                     val assets = json.getJSONArray("assets")
                     if (assets.length() > 0) {
                         val asset = assets.getJSONObject(0)
-                        return@withContext asset.getString("browser_download_url")
+                        val downloadUrl = asset.getString("browser_download_url")
+                        Log.d(TAG, "Found update download URL: $downloadUrl")
+                        return@withContext downloadUrl
                     }
                 }
                 return@withContext null
