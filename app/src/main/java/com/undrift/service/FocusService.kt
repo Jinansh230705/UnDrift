@@ -150,8 +150,8 @@ class FocusService : Service() {
 
         val notification = NotificationCompat.Builder(this, "focus_channel")
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
-            .setContentTitle("🚀 UnDrift Update Available")
-            .setContentText("A new update is ready! Tap to download and install.")
+            .setContentTitle("UnDrift Update Available")
+            .setContentText("A new update is ready. Tap to download and install.")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pi)
             .setAutoCancel(true)
@@ -178,7 +178,7 @@ class FocusService : Service() {
         focusStartTime = System.currentTimeMillis()
         focusEndTime = System.currentTimeMillis() + (durationSeconds * 1000L)
         
-        val notification = createNotification("Focus Mode Active", "Stay away from distractions!")
+        val notification = createNotification("Focus Mode Active", "Stay away from distractions")
         if (Build.VERSION.SDK_INT >= 34) {
             startForeground(1, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else {
@@ -465,9 +465,9 @@ class FocusService : Service() {
         }
         sheet.addView(title)
 
-        // Badge: "● FOCUS MODE ACTIVE"
+        // Badge: "FOCUS MODE ACTIVE"
         val badge = TextView(ctx).apply {
-            text = "\u25CF  FOCUS MODE ACTIVE"
+            text = "FOCUS MODE ACTIVE"
             setTextColor(accentColor)
             textSize = 11f
             letterSpacing = 0.12f
@@ -491,11 +491,11 @@ class FocusService : Service() {
         // Main message
         val mainMsg = TextView(ctx).apply {
             text = if (reason == "STRICT_BLOCK" && focusMinutes > 0) {
-                "You\u2019ve been focused for $focusMinutes mins\u2014keep the momentum?"
+                "You have been focused for $focusMinutes mins. Keep the momentum?"
             } else if (reason == "LIMIT_EXCEEDED") {
-                "Time\u2019s up for $appName\u2014stay on track!"
+                "Time's up for $appName. Stay on track!"
             } else {
-                "Stay focused\u2014keep the momentum?"
+                "Stay focused. Keep the momentum?"
             }
             setTextColor(0xFFFFFFFF.toInt())
             textSize = 22f
@@ -510,9 +510,9 @@ class FocusService : Service() {
         // Subtitle
         val subtitle = TextView(ctx).apply {
             text = if (reason == "STRICT_BLOCK") {
-                "I noticed you\u2019re exploring content that might break your current deep work streak."
+                "I noticed you are exploring content that might break your current deep work streak."
             } else {
-                "You\u2019ve reached your daily limit for $appName. Close and stay focused on your goals."
+                "You have reached your daily limit for $appName. Close and stay focused on your goals."
             }
             setTextColor(0xFFAAAAAA.toInt())
             textSize = 14f
@@ -524,9 +524,9 @@ class FocusService : Service() {
         }
         sheet.addView(subtitle)
 
-        // "⚡ Back to Focus" button (primary accent, rounded)
+        // "Back to Focus" button (primary accent, rounded)
         val backBtn = Button(ctx).apply {
-            text = "\u26A1 Back to Focus"
+            text = "Back to Focus"
             textSize = 16f
             isAllCaps = false
             typeface = Typeface.DEFAULT_BOLD
@@ -579,7 +579,7 @@ class FocusService : Service() {
                 if (hasEnoughCoins) {
                     grantTempAccess(blockedPkg, 20)
                 } else {
-                    Toast.makeText(ctx, "Not enough points! You need 300 \uD83E\uDE99.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(ctx, "Not enough points! You need 300 points.", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -587,7 +587,7 @@ class FocusService : Service() {
 
         // Stats line
         val statsLine = TextView(ctx).apply {
-            text = "\u2B50  92% of users stay on track after this nudge"
+            text = "92% of users stay on track after this nudge"
             setTextColor(0xFFAAAAAA.toInt())
             textSize = 12f
             gravity = Gravity.CENTER
@@ -631,7 +631,7 @@ class FocusService : Service() {
 
         val notification = NotificationCompat.Builder(this, "focus_channel")
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
-            .setContentTitle("⏰ Time's Running Out")
+            .setContentTitle("Time's Running Out")
             .setContentText("$secondsLeft seconds left for this app today.")
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
@@ -657,7 +657,7 @@ class FocusService : Service() {
         val pi = PendingIntent.getActivity(this, blockedPkg.hashCode(), intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
 
-        val title = if (reason == "LIMIT_EXCEEDED") "⏹ Time's Up!" else "🎯 Focus Alert!"
+        val title = if (reason == "LIMIT_EXCEEDED") "Time's Up" else "Focus Alert"
         val text = if (reason == "LIMIT_EXCEEDED") "You've reached your limit. Tap to block."
                    else "This app is blocked. Tap to go back."
 
@@ -688,20 +688,32 @@ class FocusService : Service() {
         val intent = Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
 
-        return NotificationCompat.Builder(this, "focus_channel")
+        return NotificationCompat.Builder(this, "focus_monitoring_channel")
             .setContentTitle(title)
             .setContentText(content)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
             .build()
     }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
+            val monitorChannel = NotificationChannel(
+                "focus_monitoring_channel",
+                "App Usage Monitoring",
+                NotificationManager.IMPORTANCE_MIN
+            ).apply {
+                description = "Runs background monitoring for app limits"
+                setShowBadge(false)
+                lockscreenVisibility = Notification.VISIBILITY_SECRET
+            }
+            val alertChannel = NotificationChannel(
                 "focus_channel",
-                "Focus Mode Notifications",
+                "Focus Alerts & Updates",
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = "Used for app blocking and focus alerts"
@@ -709,7 +721,8 @@ class FocusService : Service() {
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             }
             val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(channel)
+            manager.createNotificationChannel(monitorChannel)
+            manager.createNotificationChannel(alertChannel)
         }
     }
 
