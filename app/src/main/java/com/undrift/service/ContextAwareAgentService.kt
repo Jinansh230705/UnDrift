@@ -31,75 +31,74 @@ class ContextAwareAgentService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
         
-        when (event.eventType) {
-            AccessibilityEvent.TYPE_VIEW_SCROLLED -> {
-                // Rapid scrolling without text input strongly suggests Doom Scrolling
-                if (_currentContext.value != UserContext.IMPORTANT_TASK) {
-                    _currentContext.value = UserContext.DOOM_SCROLLING
+        try {
+            when (event.eventType) {
+                AccessibilityEvent.TYPE_VIEW_SCROLLED -> {
+                    // Rapid scrolling without text input strongly suggests Doom Scrolling
+                    if (_currentContext.value != UserContext.IMPORTANT_TASK) {
+                        _currentContext.value = UserContext.DOOM_SCROLLING
+                    }
+                }
+                AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+                AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
+                    // Debounce or limit how often we scan the full tree
+                    scanForImportantTasks()
                 }
             }
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
-            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
-                // Debounce or limit how often we scan the full tree
-                scanForImportantTasks()
-            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error handling accessibility event", e)
         }
     }
 
     private fun scanForImportantTasks() {
-        val rootNode = rootInActiveWindow ?: return
-        
-        var isImportant = false
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(rootNode)
-        
-        var nodesChecked = 0
-        while (queue.isNotEmpty() && nodesChecked < 100) {
-            val node = queue.removeFirst()
-            nodesChecked++
+        try {
+            val rootNode = rootInActiveWindow ?: return
             
-            val className = node.className?.toString() ?: ""
-            val viewId = node.viewIdResourceName ?: ""
-            val text = node.text?.toString()?.lowercase() ?: ""
+            var isImportant = false
+            val queue = ArrayDeque<AccessibilityNodeInfo>()
+            queue.add(rootNode)
             
-            // Heuristics for Important Tasks
-            // 1. Messaging/Emails (EditText focused)
-            if (className.contains("EditText")) {
-                isImportant = true
-                node.recycle()
-                break
-            }
-            // 2. Chat inputs
-            if (viewId.contains("message_input") || viewId.contains("compose") || viewId.contains("reply")) {
-                isImportant = true
-                node.recycle()
-                break
-            }
-            // 3. Document editing / creation
-            if (text.contains("type a message") || text.contains("write a comment")) {
-                isImportant = true
-                node.recycle()
-                break
-            }
+            var nodesChecked = 0
+            while (queue.isNotEmpty() && nodesChecked < 100) {
+                val node = queue.removeFirst()
+                nodesChecked++
+                
+                val className = node.className?.toString() ?: ""
+                val viewId = node.viewIdResourceName ?: ""
+                val text = node.text?.toString()?.lowercase() ?: ""
+                
+                // Heuristics for Important Tasks
+                // 1. Messaging/Emails (EditText focused)
+                if (className.contains("EditText")) {
+                    isImportant = true
+                    break
+                }
+                // 2. Chat inputs
+                if (viewId.contains("message_input") || viewId.contains("compose") || viewId.contains("reply")) {
+                    isImportant = true
+                    break
+                }
+                // 3. Document editing / creation
+                if (text.contains("type a message") || text.contains("write a comment")) {
+                    isImportant = true
+                    break
+                }
 
-            for (i in 0 until node.childCount) {
-                node.getChild(i)?.let { queue.add(it) }
+                for (i in 0 until node.childCount) {
+                    node.getChild(i)?.let { queue.add(it) }
+                }
             }
-            node.recycle()
-        }
-        
-        // Clean up remaining queue
-        while(queue.isNotEmpty()) {
-            queue.removeFirst().recycle()
-        }
-        
-        if (isImportant) {
-            _currentContext.value = UserContext.IMPORTANT_TASK
-        } else {
-            // Revert to UNKNOWN if we were important but left the important screen
-            if (_currentContext.value == UserContext.IMPORTANT_TASK) {
-                _currentContext.value = UserContext.UNKNOWN
+            
+            if (isImportant) {
+                _currentContext.value = UserContext.IMPORTANT_TASK
+            } else {
+                // Revert to UNKNOWN if we were important but left the important screen
+                if (_currentContext.value == UserContext.IMPORTANT_TASK) {
+                    _currentContext.value = UserContext.UNKNOWN
+                }
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error scanning for important tasks", e)
         }
     }
 

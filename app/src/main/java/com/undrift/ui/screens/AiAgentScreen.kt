@@ -153,10 +153,14 @@ fun AiAgentScreen(
                             }
                             
                             if (isEnabled) {
-                                val serviceIntent = Intent(context, FocusService::class.java).apply {
-                                    action = "START_MONITORING"
+                                try {
+                                    val serviceIntent = Intent(context, FocusService::class.java).apply {
+                                        action = "START_MONITORING"
+                                    }
+                                    androidx.core.content.ContextCompat.startForegroundService(context, serviceIntent)
+                                } catch (e: Exception) {
+                                    android.util.Log.e("AiAgentScreen", "Failed to start monitoring service", e)
                                 }
-                                androidx.core.content.ContextCompat.startForegroundService(context, serviceIntent)
                             } else {
                                 context.stopService(Intent(context, FocusService::class.java))
                             }
