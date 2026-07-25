@@ -82,10 +82,14 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(receiver, android.content.IntentFilter("com.undrift.RESTORE_STREAK"), android.content.Context.RECEIVER_EXPORTED)
-        } else {
-            androidx.core.content.ContextCompat.registerReceiver(this, receiver, android.content.IntentFilter("com.undrift.RESTORE_STREAK"), androidx.core.content.ContextCompat.RECEIVER_EXPORTED)
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(receiver, android.content.IntentFilter("com.undrift.RESTORE_STREAK"), android.content.Context.RECEIVER_EXPORTED)
+            } else {
+                androidx.core.content.ContextCompat.registerReceiver(this, receiver, android.content.IntentFilter("com.undrift.RESTORE_STREAK"), androidx.core.content.ContextCompat.RECEIVER_EXPORTED)
+            }
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Failed to register streak restore receiver", e)
         }
 
         downloadReceiver = object : android.content.BroadcastReceiver() {
@@ -111,10 +115,14 @@ class MainActivity : ComponentActivity() {
             }
         }
         
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(downloadReceiver, android.content.IntentFilter(android.app.DownloadManager.ACTION_DOWNLOAD_COMPLETE), android.content.Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            androidx.core.content.ContextCompat.registerReceiver(this, downloadReceiver!!, android.content.IntentFilter(android.app.DownloadManager.ACTION_DOWNLOAD_COMPLETE), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(downloadReceiver, android.content.IntentFilter(android.app.DownloadManager.ACTION_DOWNLOAD_COMPLETE), android.content.Context.RECEIVER_EXPORTED)
+            } else {
+                androidx.core.content.ContextCompat.registerReceiver(this, downloadReceiver!!, android.content.IntentFilter(android.app.DownloadManager.ACTION_DOWNLOAD_COMPLETE), androidx.core.content.ContextCompat.RECEIVER_EXPORTED)
+            }
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Failed to register download receiver", e)
         }
 
         enableEdgeToEdge()
@@ -130,7 +138,6 @@ class MainActivity : ComponentActivity() {
             }
         }
         
-        enableEdgeToEdge()
         setContent {
             val userProfile by userPreferences.userProfileFlow.collectAsStateWithLifecycle(
                 initialValue = UserProfile("", "", "", "", "", false, true)

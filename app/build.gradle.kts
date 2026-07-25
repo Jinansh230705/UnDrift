@@ -70,9 +70,6 @@ android {
             excludes += "/META-INF/native-image/native-image.properties"
             excludes += "/META-INF/native-image/reflect-config.json"
         }
-        jniLibs {
-            useLegacyPackaging = true
-        }
     }
 }
 
