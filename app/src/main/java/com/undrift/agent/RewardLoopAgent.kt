@@ -16,6 +16,7 @@ enum class RewardMagnitude {
 }
 
 data class RewardEventInput(
+    val eventId: String, // Unique identifier for the event to prevent duplicates
     val event: String,
     val plannedDurationMinutes: Int? = null,
     val actualFocusDurationMinutes: Int? = null,
@@ -40,7 +41,15 @@ interface RewardLoopAgent {
 }
 
 class LocalRewardLoopAgent : RewardLoopAgent {
+    private val processedEventIds = mutableSetOf<String>()
+
     override fun evaluate(input: RewardEventInput): RewardOutput {
+        // Prevent processing duplicate events
+        if (processedEventIds.contains(input.eventId)) {
+            return RewardOutput(RewardType.NONE, RewardMagnitude.LOW, null)
+        }
+        processedEventIds.add(input.eventId)
+
         // Trivial events should not be rewarded
         if (input.event == "APP_OPENED" || input.event == "BUTTON_CLICKED" || input.event == "TIMER_STARTED") {
             return RewardOutput(RewardType.NONE, RewardMagnitude.LOW, null)

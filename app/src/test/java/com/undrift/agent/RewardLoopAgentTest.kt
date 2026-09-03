@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
+import java.util.UUID
 
 class RewardLoopAgentTest {
 
@@ -17,6 +18,7 @@ class RewardLoopAgentTest {
     @Test
     fun testSessionCompletion_MeaningfulSession() {
         val input = RewardEventInput(
+            eventId = UUID.randomUUID().toString(),
             event = "FOCUS_SESSION_COMPLETED",
             plannedDurationMinutes = 25,
             actualFocusDurationMinutes = 25
@@ -30,6 +32,7 @@ class RewardLoopAgentTest {
     @Test
     fun testSessionCompletion_PartialButMeaningfulProgress() {
         val input = RewardEventInput(
+            eventId = UUID.randomUUID().toString(),
             event = "FOCUS_SESSION_COMPLETED",
             plannedDurationMinutes = 25,
             actualFocusDurationMinutes = 10
@@ -43,6 +46,7 @@ class RewardLoopAgentTest {
     @Test
     fun testSessionCompletion_NoMeaningfulProgress() {
         val input = RewardEventInput(
+            eventId = UUID.randomUUID().toString(),
             event = "FOCUS_SESSION_COMPLETED",
             plannedDurationMinutes = 25,
             actualFocusDurationMinutes = 2
@@ -56,6 +60,7 @@ class RewardLoopAgentTest {
     @Test
     fun testRecovery() {
         val input = RewardEventInput(
+            eventId = UUID.randomUUID().toString(),
             event = "DISTRACTION_RECOVERED"
         )
         val result = agent.evaluate(input)
@@ -67,6 +72,7 @@ class RewardLoopAgentTest {
     @Test
     fun testMilestone() {
         val input = RewardEventInput(
+            eventId = UUID.randomUUID().toString(),
             event = "FOCUS_SESSION_COMPLETED",
             plannedDurationMinutes = 20,
             actualFocusDurationMinutes = 20,
@@ -82,6 +88,7 @@ class RewardLoopAgentTest {
     @Test
     fun testConsistency() {
         val input = RewardEventInput(
+            eventId = UUID.randomUUID().toString(),
             event = "FOCUS_SESSION_COMPLETED",
             plannedDurationMinutes = 25,
             actualFocusDurationMinutes = 25,
@@ -96,6 +103,7 @@ class RewardLoopAgentTest {
     @Test
     fun testTrivialInteraction() {
         val input = RewardEventInput(
+            eventId = UUID.randomUUID().toString(),
             event = "APP_OPENED"
         )
         val result = agent.evaluate(input)
@@ -106,10 +114,29 @@ class RewardLoopAgentTest {
     @Test
     fun testBreakOrUnknownEvent() {
         val input = RewardEventInput(
+            eventId = UUID.randomUUID().toString(),
             event = "USER_ON_BREAK"
         )
         val result = agent.evaluate(input)
         assertEquals(RewardType.NONE, result.type)
         assertNull(result.message)
+    }
+
+    @Test
+    fun testDuplicateEvent() {
+        val eventId = UUID.randomUUID().toString()
+        val input = RewardEventInput(
+            eventId = eventId,
+            event = "FOCUS_SESSION_COMPLETED",
+            plannedDurationMinutes = 25,
+            actualFocusDurationMinutes = 25
+        )
+        // First evaluation should succeed
+        val firstResult = agent.evaluate(input)
+        assertEquals(RewardType.SESSION_COMPLETION, firstResult.type)
+        
+        // Second evaluation with same eventId should be ignored (duplicate)
+        val secondResult = agent.evaluate(input)
+        assertEquals(RewardType.NONE, secondResult.type)
     }
 }
