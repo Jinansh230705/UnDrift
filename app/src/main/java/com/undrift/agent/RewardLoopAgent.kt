@@ -1,5 +1,10 @@
 package com.undrift.agent
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import java.util.UUID
+
 enum class RewardType {
     NONE,
     SESSION_COMPLETION,
@@ -16,7 +21,7 @@ enum class RewardMagnitude {
 }
 
 data class RewardEventInput(
-    val eventId: String, // Unique identifier for the event to prevent duplicates
+    val eventId: String = UUID.randomUUID().toString(),
     val event: String,
     val plannedDurationMinutes: Int? = null,
     val actualFocusDurationMinutes: Int? = null,
@@ -36,12 +41,35 @@ data class RewardOutput(
     val message: String?
 )
 
+data class RewardEvaluationRecord(
+    val id: String = UUID.randomUUID().toString(),
+    val timestamp: Long = System.currentTimeMillis(),
+    val input: RewardEventInput,
+    val output: RewardOutput
+)
+
 interface RewardLoopAgent {
     fun evaluate(input: RewardEventInput): RewardOutput
+    fun getRecentEvaluations(): List<RewardEvaluationRecord>
+    fun clearEvaluations()
 }
 
 class LocalRewardLoopAgent : RewardLoopAgent {
     private val processedEventIds = mutableSetOf<String>()
+    private val evaluationsList = mutableListOf<RewardEvaluationRecord>()
+
+    companion object {
+        private val _evaluationsFlow = MutableStateFlow<List<RewardEvaluationRecord>>(emptyList())
+        val evaluationsFlow: StateFlow<List<RewardEvaluationRecord>> = _evaluationsFlow.asStateFlow()
+
+        val instance: LocalRewardLoopAgent by lazy { LocalRewardLoopAgent() }
+
+        fun logEvaluation(record: RewardEvaluationRecord) {
+            val current = _evaluationsFlow.value.toMutableList()
+            current.add(0, record)
+            _evaluationsFlow.value = current.take(50)
+        }
+    }
 
     override fun evaluate(input: RewardEventInput): RewardOutput {
         // Prevent processing duplicate events
@@ -50,6 +78,16 @@ class LocalRewardLoopAgent : RewardLoopAgent {
         }
         processedEventIds.add(input.eventId)
 
+        val output = calculateOutput(input)
+
+        val record = RewardEvaluationRecord(input = input, output = output)
+        evaluationsList.add(0, record)
+        logEvaluation(record)
+
+        return output
+    }
+
+    private fun calculateOutput(input: RewardEventInput): RewardOutput {
         // Trivial events should not be rewarded
         if (input.event == "APP_OPENED" || input.event == "BUTTON_CLICKED" || input.event == "TIMER_STARTED") {
             return RewardOutput(RewardType.NONE, RewardMagnitude.LOW, null)
@@ -108,5 +146,15 @@ class LocalRewardLoopAgent : RewardLoopAgent {
         }
 
         return RewardOutput(RewardType.NONE, RewardMagnitude.LOW, null)
+    }
+
+    override fun getRecentEvaluations(): List<RewardEvaluationRecord> {
+        return evaluationsList.toList()
+    }
+
+    override fun clearEvaluations() {
+        evaluationsList.clear()
+        processedEventIds.clear()
+        _evaluationsFlow.value = emptyList()
     }
 }
