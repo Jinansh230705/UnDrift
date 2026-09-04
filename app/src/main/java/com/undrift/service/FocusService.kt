@@ -28,12 +28,15 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import java.util.*
 import com.undrift.agent.*
+import com.undrift.network.ProxyAiClient
 
 class FocusService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private lateinit var userPreferences: UserPreferences
     private val mongoRepository = MongoRepository()
-    private val rewardAgent: RewardLoopAgent = LocalRewardLoopAgent()
+    private val rewardAgent: RewardLoopAgent by lazy {
+        ProxyRewardLoopAgent(ProxyAiClient(), LocalRewardLoopAgent())
+    }
     
     private var isFocusModeActive = false
     private var focusEndTime = 0L
@@ -580,15 +583,16 @@ class FocusService : Service() {
                     eventId = UUID.randomUUID().toString(),
                     event = "DISTRACTION_RECOVERED"
                 )
-                val rewardOutput = rewardAgent.evaluate(rewardInput)
-                val pointsToAward = when(rewardOutput.magnitude) {
-                    RewardMagnitude.HIGH -> 50
-                    RewardMagnitude.MEDIUM -> 25
-                    RewardMagnitude.LOW -> 10
-                }
-                
-                if (rewardOutput.type != RewardType.NONE) {
-                    serviceScope.launch { userPreferences.updatePoints(pointsToAward) }
+                serviceScope.launch {
+                    val rewardOutput = rewardAgent.evaluate(rewardInput)
+                    val pointsToAward = when(rewardOutput.magnitude) {
+                        RewardMagnitude.HIGH -> 50
+                        RewardMagnitude.MEDIUM -> 25
+                        RewardMagnitude.LOW -> 10
+                    }
+                    if (rewardOutput.type != RewardType.NONE) {
+                        userPreferences.updatePoints(pointsToAward)
+                    }
                 }
                 
                 lastHomeActionTime = System.currentTimeMillis()

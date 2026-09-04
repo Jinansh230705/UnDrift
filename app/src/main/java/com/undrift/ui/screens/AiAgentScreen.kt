@@ -19,9 +19,9 @@ import androidx.compose.ui.unit.dp
 import com.adamglin.PhosphorIcons
 import com.adamglin.phosphoricons.Bold
 import com.adamglin.phosphoricons.bold.CaretLeft
-import com.adamglin.phosphoricons.bold.Gear
-import com.adamglin.phosphoricons.bold.Link
+
 import com.adamglin.phosphoricons.bold.ShieldCheck
+
 import com.undrift.data.UserPreferences
 import com.undrift.data.UserProfile
 import com.undrift.service.FocusService
@@ -40,19 +40,7 @@ fun AiAgentScreen(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    var apiUrl by remember { mutableStateOf(userProfile.aiApiUrl) }
-    var apiKey by remember { mutableStateOf(userProfile.aiApiKey) }
     var isMonitoringEnabled by remember { mutableStateOf(userProfile.isMonitoringEnabled) }
-    
-    var hasUnsavedChanges by remember { mutableStateOf(false) }
-
-    LaunchedEffect(apiUrl, apiKey) {
-        if (apiUrl != userProfile.aiApiUrl || apiKey != userProfile.aiApiKey) {
-            hasUnsavedChanges = true
-        } else {
-            hasUnsavedChanges = false
-        }
-    }
 
     Scaffold(
         topBar = {
@@ -70,34 +58,7 @@ fun AiAgentScreen(
             )
         },
         containerColor = MaterialTheme.colorScheme.background,
-        bottomBar = {
-            if (hasUnsavedChanges) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surface,
-                    shadowElevation = 8.dp,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    PaddingValues(16.dp).let {
-                        Button(
-                            onClick = {
-                                scope.launch {
-                                    userPreferences.updateAiSettings(apiUrl, apiKey)
-                                    hasUnsavedChanges = false
-                                }
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(it)
-                                .height(56.dp),
-                            shape = SquircleShape(),
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                        ) {
-                            Text("Save Configuration", fontWeight = FontWeight.Bold, color = Color.White)
-                        }
-                    }
-                }
-            }
-        }
+
     ) { padding ->
         Column(
             modifier = Modifier
@@ -133,12 +94,12 @@ fun AiAgentScreen(
                     
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "App Usage Monitoring",
+                            text = "AI Context Agent",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = if (isMonitoringEnabled) "Running and protecting focus" else "Monitoring is currently paused",
+                            text = if (isMonitoringEnabled) "Active and protecting your focus" else "Agent is currently turned off",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                         )
@@ -173,55 +134,19 @@ fun AiAgentScreen(
             Spacer(modifier = Modifier.height(32.dp))
             
             Text(
-                text = "Context AI Settings",
+                text = "Agent Settings",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Connect an external LLM to analyze your on-screen context and detect Doom Scrolling automatically.",
+                text = "Control whether the AI agent can monitor your app usage and help protect your focus.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // API URL Input
-            OutlinedTextField(
-                value = apiUrl,
-                onValueChange = { apiUrl = it },
-                label = { Text("API URL (e.g. OpenAI / Gemini endpoint)") },
-                placeholder = { Text("https://api.openai.com/v1/chat/completions") },
-                modifier = Modifier.fillMaxWidth(),
-                leadingIcon = { Icon(PhosphorIcons.Bold.Link, contentDescription = null) },
-                shape = SquircleShape(),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-                )
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // API Key Input
-            OutlinedTextField(
-                value = apiKey,
-                onValueChange = { apiKey = it },
-                label = { Text("API Key") },
-                placeholder = { Text("sk-...") },
-                modifier = Modifier.fillMaxWidth(),
-                leadingIcon = { Icon(PhosphorIcons.Bold.Gear, contentDescription = null) },
-                shape = SquircleShape(),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-                )
-            )
-
-            Spacer(modifier = Modifier.height(100.dp)) // Extra padding for bottom bar
+            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }
