@@ -139,4 +139,20 @@ class RewardLoopAgentTest {
         val secondResult = agent.evaluate(input)
         assertEquals(RewardType.NONE, secondResult.type)
     }
+
+    @Test
+    fun testEvaluationLogging() {
+        agent.clearEvaluations()
+        val input = RewardEventInput(
+            eventId = UUID.randomUUID().toString(),
+            event = "DISTRACTION_RECOVERED"
+        )
+        agent.evaluate(input)
+        val history = agent.getRecentEvaluations()
+        assertEquals(1, history.size)
+        assertEquals(RewardType.RECOVERY, history[0].output.type)
+
+        agent.clearEvaluations()
+        assertEquals(0, agent.getRecentEvaluations().size)
+    }
 }

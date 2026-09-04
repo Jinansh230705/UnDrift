@@ -33,7 +33,7 @@ class FocusService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private lateinit var userPreferences: UserPreferences
     private val mongoRepository = MongoRepository()
-    private val rewardAgent: RewardLoopAgent = LocalRewardLoopAgent()
+    private val rewardAgent: RewardLoopAgent = LocalRewardLoopAgent.instance
     
     private var isFocusModeActive = false
     private var focusEndTime = 0L
@@ -278,6 +278,7 @@ class FocusService : Service() {
             userPreferences.updatePoints(pointsToAward)
             val newPoints = profile.points + pointsToAward
             mongoRepository.updateUserStats(profile.email, newPoints, newStreak, profile.streakHistory)
+            showRewardNotification(pointsToAward, rewardOutput.message ?: "Agent rewarded you for your focus session!")
         } else {
             mongoRepository.updateUserStats(profile.email, profile.points, newStreak, profile.streakHistory)
         }
@@ -589,6 +590,9 @@ class FocusService : Service() {
                 
                 if (rewardOutput.type != RewardType.NONE) {
                     serviceScope.launch { userPreferences.updatePoints(pointsToAward) }
+                    mainHandler.post {
+                        Toast.makeText(ctx, "Agent: +$pointsToAward points! ${rewardOutput.message ?: "Great recovery."}", Toast.LENGTH_LONG).show()
+                    }
                 }
                 
                 lastHomeActionTime = System.currentTimeMillis()
@@ -771,6 +775,27 @@ class FocusService : Service() {
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(monitorChannel)
             manager.createNotificationChannel(alertChannel)
+        }
+    }
+
+    private fun showRewardNotification(points: Int, message: String) {
+        try {
+            val notification = NotificationCompat.Builder(this, "focus_channel")
+                .setSmallIcon(android.R.drawable.btn_star)
+                .setContentTitle("Focus Agent Reward: +$points Points!")
+                .setContentText(message)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .build()
+
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.notify(System.currentTimeMillis().toInt(), notification)
+            
+            mainHandler.post {
+                Toast.makeText(this, "Agent: +$points points! $message", Toast.LENGTH_LONG).show()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to show reward notification", e)
         }
     }
 
