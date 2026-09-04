@@ -27,11 +27,13 @@ import android.content.IntentFilter
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import java.util.*
+import com.undrift.agent.*
 
 class FocusService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private lateinit var userPreferences: UserPreferences
     private val mongoRepository = MongoRepository()
+    private val rewardAgent: RewardLoopAgent = LocalRewardLoopAgent()
     
     private var isFocusModeActive = false
     private var focusEndTime = 0L
@@ -253,11 +255,32 @@ class FocusService : Service() {
             else -> 1 // gap or first ever
         }
 
+        val actualMinutes = ((System.currentTimeMillis() - focusStartTime) / 60_000).toInt()
+        val plannedMinutes = ((focusEndTime - focusStartTime) / 60_000).toInt()
+        val rewardInput = RewardEventInput(
+            eventId = UUID.randomUUID().toString(),
+            event = "FOCUS_SESSION_COMPLETED",
+            plannedDurationMinutes = plannedMinutes,
+            actualFocusDurationMinutes = actualMinutes,
+            currentStreak = newStreak,
+            previousStreak = profile.streakCount
+        )
+        val rewardOutput = rewardAgent.evaluate(rewardInput)
+        
+        val pointsToAward = when(rewardOutput.magnitude) {
+            RewardMagnitude.HIGH -> 500
+            RewardMagnitude.MEDIUM -> 300
+            RewardMagnitude.LOW -> 100
+        }
+        
         userPreferences.updateStreak(newStreak, profile.streakHistory)
-        userPreferences.updatePoints(300)
-
-        val newPoints = profile.points + 300
-        mongoRepository.updateUserStats(profile.email, newPoints, newStreak, profile.streakHistory)
+        if (rewardOutput.type != RewardType.NONE) {
+            userPreferences.updatePoints(pointsToAward)
+            val newPoints = profile.points + pointsToAward
+            mongoRepository.updateUserStats(profile.email, newPoints, newStreak, profile.streakHistory)
+        } else {
+            mongoRepository.updateUserStats(profile.email, profile.points, newStreak, profile.streakHistory)
+        }
 
         stopFocusMode(breakStreak = false)
     }
@@ -553,8 +576,21 @@ class FocusService : Service() {
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(56)
             ).apply { bottomMargin = dp(12) }
             setOnClickListener {
-                // Award 15 focus points for returning
-                serviceScope.launch { userPreferences.updatePoints(15) }
+                val rewardInput = RewardEventInput(
+                    eventId = UUID.randomUUID().toString(),
+                    event = "DISTRACTION_RECOVERED"
+                )
+                val rewardOutput = rewardAgent.evaluate(rewardInput)
+                val pointsToAward = when(rewardOutput.magnitude) {
+                    RewardMagnitude.HIGH -> 50
+                    RewardMagnitude.MEDIUM -> 25
+                    RewardMagnitude.LOW -> 10
+                }
+                
+                if (rewardOutput.type != RewardType.NONE) {
+                    serviceScope.launch { userPreferences.updatePoints(pointsToAward) }
+                }
+                
                 lastHomeActionTime = System.currentTimeMillis()
                 dismissOverlay()
                 try {
