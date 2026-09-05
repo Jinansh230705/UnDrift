@@ -4,6 +4,7 @@ import android.app.AppOpsManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
@@ -380,12 +381,22 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun checkPermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                try {
+                    requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
+                } catch (e: Throwable) {
+                    Log.e("MainActivity", "Failed to request notification permission", e)
+                }
+            }
+        }
+
         val appOps = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
         val mode = appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), packageName)
         if (mode != AppOpsManager.MODE_ALLOWED) {
             try {
                 startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 Log.e("MainActivity", "Failed to launch usage access settings", e)
             }
             return
@@ -398,7 +409,7 @@ class MainActivity : ComponentActivity() {
                     Uri.parse("package:$packageName")
                 )
                 startActivity(intent)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 Log.e("MainActivity", "Failed to launch overlay permission settings", e)
             }
         }
@@ -409,8 +420,17 @@ class MainActivity : ComponentActivity() {
             val serviceIntent = Intent(this, FocusService::class.java).apply {
                 action = "START_MONITORING"
             }
-            androidx.core.content.ContextCompat.startForegroundService(this, serviceIntent)
-        } catch (e: Exception) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                try {
+                    androidx.core.content.ContextCompat.startForegroundService(this, serviceIntent)
+                } catch (e: Throwable) {
+                    Log.w("MainActivity", "startForegroundService failed on Android 15/16, falling back to startService", e)
+                    startService(serviceIntent)
+                }
+            } else {
+                startService(serviceIntent)
+            }
+        } catch (e: Throwable) {
             Log.e("MainActivity", "Failed to start monitoring foreground service", e)
         }
     }
