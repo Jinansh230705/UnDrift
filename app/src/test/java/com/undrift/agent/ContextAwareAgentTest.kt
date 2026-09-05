@@ -1,6 +1,7 @@
 package com.undrift.agent
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Before
 import org.junit.Test
 
@@ -14,30 +15,18 @@ class ContextAwareAgentTest {
     }
 
     @Test
-    fun testImportantTaskDetection() {
+    fun testSafeFallbackBehavior() {
         val input = ContextAssessmentInput(
-            packageName = "com.android.chrome",
-            windowTitle = "Researching Kotlin Coroutines on GitHub"
+            packageName = "com.any.app",
+            isBlocked = true
         )
         val result = agent.assessContext(input)
-        assertEquals(UserContext.IMPORTANT_TASK, result.context)
-    }
-
-    @Test
-    fun testSocialMediaDistraction() {
-        val input = ContextAssessmentInput(
-            packageName = "com.instagram.android"
-        )
-        val result = agent.assessContext(input)
-        assertEquals(UserContext.POTENTIAL_DISTRACTION, result.context)
-    }
-
-    @Test
-    fun testSystemUiApp() {
-        val input = ContextAssessmentInput(
-            packageName = "com.android.settings"
-        )
-        val result = agent.assessContext(input)
+        
+        // Ensure local fallback fails closed and safe
         assertEquals(UserContext.UNKNOWN, result.context)
+        assertEquals(ActivityCompatibility.UNKNOWN, result.activityCompatibility)
+        assertEquals(InterventionState.NOT_ELIGIBLE, result.intervention.state)
+        assertEquals(true, result.blocked)
+        assertFalse(result.episode.active)
     }
 }

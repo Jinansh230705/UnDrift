@@ -33,57 +33,39 @@ class LocalMinimalInterventionAgent : MinimalInterventionAgent {
         val timeSinceLast = now - input.lastInterventionTimestamp
         val isCooldownActive = timeSinceLast < input.cooldownMillis
 
-        if (input.contextAssessment.context == UserContext.IMPORTANT_TASK) {
+        val state = input.contextAssessment.intervention.state
+
+        if (state == InterventionState.SUPPRESSED || state == InterventionState.NOT_ELIGIBLE || state == InterventionState.WAITING) {
             return InterventionDecisionOutput(
                 shouldIntervene = false,
                 level = InterventionLevel.NONE,
-                reason = "User is engaged in an important task. Cooldown / bypass active.",
+                reason = input.contextAssessment.intervention.reason,
                 cooldownActive = isCooldownActive
             )
         }
 
-        if (input.isFocusModeActive && input.contextAssessment.context == UserContext.POTENTIAL_DISTRACTION) {
-            if (isCooldownActive) {
-                return InterventionDecisionOutput(
-                    shouldIntervene = false,
-                    level = InterventionLevel.NONE,
-                    reason = "Intervention cooldown active to prevent spamming the user.",
-                    cooldownActive = true
-                )
-            }
-
+        // State is ELIGIBLE
+        if (isCooldownActive) {
             return InterventionDecisionOutput(
-                shouldIntervene = true,
-                level = InterventionLevel.STRICT_OVERLAY,
-                reason = "Focus mode is active and user accessed a distracting application.",
-                cooldownActive = false
+                shouldIntervene = false,
+                level = InterventionLevel.NONE,
+                reason = "Intervention cooldown active to prevent spamming the user.",
+                cooldownActive = true
             )
         }
 
-        val limit = input.timeLimitMillis ?: 0L
-        if (limit > 0 && input.timeSpentMillis >= limit) {
-            if (isCooldownActive) {
-                return InterventionDecisionOutput(
-                    shouldIntervene = false,
-                    level = InterventionLevel.NONE,
-                    reason = "Daily app limit reached, but intervention cooldown active.",
-                    cooldownActive = true
-                )
-            }
-
-            return InterventionDecisionOutput(
-                shouldIntervene = true,
-                level = InterventionLevel.STRICT_OVERLAY,
-                reason = "Daily application usage limit exceeded.",
-                cooldownActive = false
-            )
+        // Determine level
+        val level = if (input.isFocusModeActive) {
+            InterventionLevel.STRICT_OVERLAY
+        } else {
+            InterventionLevel.SOFT_NUDGE
         }
 
         return InterventionDecisionOutput(
-            shouldIntervene = false,
-            level = InterventionLevel.NONE,
-            reason = "No intervention necessary.",
-            cooldownActive = isCooldownActive
+            shouldIntervene = true,
+            level = level,
+            reason = input.contextAssessment.intervention.reason,
+            cooldownActive = false
         )
     }
 

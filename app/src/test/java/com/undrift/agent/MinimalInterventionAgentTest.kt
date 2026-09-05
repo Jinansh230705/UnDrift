@@ -15,16 +15,26 @@ class MinimalInterventionAgentTest {
         agent = LocalMinimalInterventionAgent()
     }
 
-    @Test
-    fun testBypassOnImportantTask() {
-        val context = ContextAssessmentOutput(
-            context = UserContext.IMPORTANT_TASK,
-            confidence = 0.9,
-            explanation = "Work related"
+    private fun mockContext(state: InterventionState): ContextAssessmentOutput {
+        return ContextAssessmentOutput(
+            context = UserContext.UNKNOWN,
+            contextConfidence = 1.0,
+            currentActivity = "Testing",
+            activityCompatibility = ActivityCompatibility.UNKNOWN,
+            distractionConfidence = 1.0,
+            blocked = false,
+            episode = EpisodeInfo(true, null, 100),
+            intervention = InterventionInfo(state, 60, 100, 0, "Reason"),
+            transition = null,
+            evidence = emptyList()
         )
+    }
+
+    @Test
+    fun testBypassOnNotEligible() {
         val input = InterventionDecisionInput(
             packageName = "com.android.chrome",
-            contextAssessment = context,
+            contextAssessment = mockContext(InterventionState.NOT_ELIGIBLE),
             isFocusModeActive = true,
             timeSpentMillis = 100_000L
         )
@@ -34,15 +44,10 @@ class MinimalInterventionAgentTest {
     }
 
     @Test
-    fun testInterventionOnFocusDistraction() {
-        val context = ContextAssessmentOutput(
-            context = UserContext.POTENTIAL_DISTRACTION,
-            confidence = 0.95,
-            explanation = "Social media"
-        )
+    fun testInterventionOnEligibleFocus() {
         val input = InterventionDecisionInput(
             packageName = "com.instagram.android",
-            contextAssessment = context,
+            contextAssessment = mockContext(InterventionState.ELIGIBLE),
             isFocusModeActive = true,
             timeSpentMillis = 30_000L,
             lastInterventionTimestamp = 0L
@@ -54,15 +59,10 @@ class MinimalInterventionAgentTest {
 
     @Test
     fun testCooldownSuppression() {
-        val context = ContextAssessmentOutput(
-            context = UserContext.POTENTIAL_DISTRACTION,
-            confidence = 0.95,
-            explanation = "Social media"
-        )
         val recentTimestamp = System.currentTimeMillis() - 10_000L // 10s ago (cooldown 60s)
         val input = InterventionDecisionInput(
             packageName = "com.instagram.android",
-            contextAssessment = context,
+            contextAssessment = mockContext(InterventionState.ELIGIBLE),
             isFocusModeActive = true,
             timeSpentMillis = 30_000L,
             lastInterventionTimestamp = recentTimestamp

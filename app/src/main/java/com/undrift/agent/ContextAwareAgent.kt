@@ -1,25 +1,74 @@
 package com.undrift.agent
 
 enum class UserContext {
-    IMPORTANT_TASK,
-    CASUAL_BROWSING,
-    POTENTIAL_DISTRACTION,
+    FOCUS,
+    STUDY,
+    WORK,
     BREAK,
+    CASUAL,
+    SCHEDULED_ACTIVITY,
+    IDLE,
     UNKNOWN
 }
+
+enum class ActivityCompatibility {
+    CONSISTENT,
+    INCONSISTENT,
+    POTENTIALLY_INCONSISTENT,
+    UNKNOWN
+}
+
+enum class InterventionState {
+    NOT_ELIGIBLE,
+    WAITING,
+    ELIGIBLE,
+    SUPPRESSED
+}
+
+data class EpisodeInfo(
+    val active: Boolean,
+    val startedAt: Long?,
+    val durationSeconds: Long
+)
+
+data class InterventionInfo(
+    val state: InterventionState,
+    val thresholdSeconds: Long,
+    val elapsedSeconds: Long,
+    val remainingSeconds: Long,
+    val reason: String
+)
 
 data class ContextAssessmentInput(
     val packageName: String,
     val appCategory: String? = null,
+    val isBlocked: Boolean = false,
     val windowTitle: String? = null,
     val isFocusModeActive: Boolean = false,
-    val activeGoal: String? = null
+    val focusSessionPlannedDuration: Long? = null,
+    val focusSessionStartTime: Long? = null,
+    val activeGoal: String? = null,
+    val sessionStartTime: Long? = null,
+    val timeSpentMillis: Long = 0L,
+    val recentAppHistory: List<String> = emptyList(),
+    val previousContext: UserContext? = null,
+    val previousContextConfidence: Double? = null,
+    val timeSinceLastIntervention: Long? = null,
+    val configuredNudgeDelay: Long? = null,
+    val isBreakState: Boolean = false
 )
 
 data class ContextAssessmentOutput(
     val context: UserContext,
-    val confidence: Double,
-    val explanation: String
+    val contextConfidence: Double,
+    val currentActivity: String,
+    val activityCompatibility: ActivityCompatibility,
+    val distractionConfidence: Double,
+    val blocked: Boolean,
+    val episode: EpisodeInfo,
+    val intervention: InterventionInfo,
+    val transition: String?,
+    val evidence: List<String>
 )
 
 interface ContextAwareAgent {
@@ -28,39 +77,24 @@ interface ContextAwareAgent {
 
 class LocalContextAwareAgent : ContextAwareAgent {
     override fun assessContext(input: ContextAssessmentInput): ContextAssessmentOutput {
-        val pkg = input.packageName.lowercase()
-        
-        if (pkg.contains("settings") || pkg.contains("launcher") || pkg.contains("systemui")) {
-            return ContextAssessmentOutput(
-                context = UserContext.UNKNOWN,
-                confidence = 1.0,
-                explanation = "System UI or system settings application"
-            )
-        }
-
-        if (pkg.contains("chrome") || pkg.contains("browser") || pkg.contains("docs")) {
-            val title = input.windowTitle?.lowercase() ?: ""
-            if (title.contains("work") || title.contains("research") || title.contains("study") || title.contains("github")) {
-                return ContextAssessmentOutput(
-                    context = UserContext.IMPORTANT_TASK,
-                    confidence = 0.9,
-                    explanation = "Browser session active on work/research related material"
-                )
-            }
-        }
-
-        if (pkg.contains("instagram") || pkg.contains("tiktok") || pkg.contains("twitter") || pkg.contains("reddit")) {
-            return ContextAssessmentOutput(
-                context = UserContext.POTENTIAL_DISTRACTION,
-                confidence = 0.95,
-                explanation = "Social media application active during monitoring"
-            )
-        }
-
+        // A very safe, conservative fallback that fails closed (never nudging by default)
         return ContextAssessmentOutput(
-            context = UserContext.CASUAL_BROWSING,
-            confidence = 0.7,
-            explanation = "Standard application usage"
+            context = UserContext.UNKNOWN,
+            contextConfidence = 0.0,
+            currentActivity = "UNKNOWN",
+            activityCompatibility = ActivityCompatibility.UNKNOWN,
+            distractionConfidence = 0.0,
+            blocked = input.isBlocked,
+            episode = EpisodeInfo(false, null, 0),
+            intervention = InterventionInfo(
+                state = InterventionState.NOT_ELIGIBLE,
+                thresholdSeconds = 0,
+                elapsedSeconds = 0,
+                remainingSeconds = 0,
+                reason = "Fallback safe mode; proxy analysis unavailable."
+            ),
+            transition = null,
+            evidence = listOf("Local fallback used.")
         )
     }
 

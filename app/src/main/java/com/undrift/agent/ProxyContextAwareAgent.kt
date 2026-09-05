@@ -5,6 +5,7 @@ import com.undrift.network.ChatMessage
 import com.undrift.network.ProxyAiClient
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
+import org.json.JSONArray
 
 /**
  * Uses [ProxyAiClient] to assess user context via the Cloudflare AI Proxy,
@@ -21,9 +22,32 @@ class ProxyContextAwareAgent(
                 messages = listOf(
                     ChatMessage(
                         "system",
-                        "You are UnDrift's context awareness agent. Assess the user context given app and window information. " +
-                                "Return strictly valid JSON with exactly key 'context' (IMPORTANT_TASK, CASUAL_BROWSING, " +
-                                "POTENTIAL_DISTRACTION, BREAK, or UNKNOWN), 'confidence' (0.0 to 1.0), and 'explanation' (string)."
+                        "You are the Context-Aware Agent for Undrift, an anti-procrastination Android application.\n" +
+                        "Your responsibility is to understand the user's current behavioral context and determine whether their current activity is consistent with their intended focus.\n" +
+                        "A blocked application being opened is NOT automatic proof that intervention is required. Context and persistence matter.\n" +
+                        "Return strictly valid JSON matching this schema:\n" +
+                        "{\n" +
+                        "  \"context\": \"FOCUS | STUDY | WORK | BREAK | SCHEDULED_ACTIVITY | CASUAL | IDLE | UNKNOWN\",\n" +
+                        "  \"context_confidence\": 0.0 to 1.0,\n" +
+                        "  \"current_activity\": \"string\",\n" +
+                        "  \"activity_compatibility\": \"CONSISTENT | INCONSISTENT | POTENTIALLY_INCONSISTENT | UNKNOWN\",\n" +
+                        "  \"distraction_confidence\": 0.0 to 1.0,\n" +
+                        "  \"blocked\": true/false,\n" +
+                        "  \"episode\": {\n" +
+                        "    \"active\": true/false,\n" +
+                        "    \"started_at\": timestamp_or_null,\n" +
+                        "    \"duration_seconds\": integer\n" +
+                        "  },\n" +
+                        "  \"intervention\": {\n" +
+                        "    \"state\": \"NOT_ELIGIBLE | WAITING | ELIGIBLE | SUPPRESSED\",\n" +
+                        "    \"threshold_seconds\": integer,\n" +
+                        "    \"elapsed_seconds\": integer,\n" +
+                        "    \"remaining_seconds\": integer,\n" +
+                        "    \"reason\": \"string\"\n" +
+                        "  },\n" +
+                        "  \"transition\": \"string or null\",\n" +
+                        "  \"evidence\": [\"short string\"]\n" +
+                        "}"
                     ),
                     ChatMessage("user", input.toPrompt())
                 ),
@@ -43,20 +67,58 @@ class ProxyContextAwareAgent(
 
         return runCatching {
             val json = JSONObject(raw.substring(start, end + 1))
-            val context = UserContext.valueOf(json.getString("context"))
-            val confidence = json.optDouble("confidence", 0.8)
-            val explanation = json.optString("explanation", "AI assessed context")
-            ContextAssessmentOutput(context, confidence, explanation)
+            val episodeJson = json.getJSONObject("episode")
+            val interventionJson = json.getJSONObject("intervention")
+            val evidenceArray = json.optJSONArray("evidence") ?: JSONArray()
+            val evidenceList = List(evidenceArray.length()) { evidenceArray.getString(it) }
+
+            ContextAssessmentOutput(
+                context = UserContext.valueOf(json.getString("context")),
+                contextConfidence = json.getDouble("context_confidence"),
+                currentActivity = json.getString("current_activity"),
+                activityCompatibility = ActivityCompatibility.valueOf(json.getString("activity_compatibility")),
+                distractionConfidence = json.getDouble("distraction_confidence"),
+                blocked = json.getBoolean("blocked"),
+                episode = EpisodeInfo(
+                    active = episodeJson.getBoolean("active"),
+                    startedAt = if (episodeJson.isNull("started_at")) null else episodeJson.optLong("started_at"),
+                    durationSeconds = episodeJson.getLong("duration_seconds")
+                ),
+                intervention = InterventionInfo(
+                    state = InterventionState.valueOf(interventionJson.getString("state")),
+                    thresholdSeconds = interventionJson.getLong("threshold_seconds"),
+                    elapsedSeconds = interventionJson.getLong("elapsed_seconds"),
+                    remainingSeconds = interventionJson.getLong("remaining_seconds"),
+                    reason = interventionJson.getString("reason")
+                ),
+                transition = if (json.isNull("transition")) null else json.getString("transition"),
+                evidence = evidenceList
+            )
         }.getOrNull()
     }
 
     private fun ContextAssessmentInput.toPrompt(): String = JSONObject().apply {
         put("packageName", packageName)
-        put("appCategory", appCategory ?: JSONObject.NULL)
-        put("windowTitle", windowTitle ?: JSONObject.NULL)
+        putNullable("appCategory", appCategory)
+        put("isBlocked", isBlocked)
+        putNullable("windowTitle", windowTitle)
         put("isFocusModeActive", isFocusModeActive)
-        put("activeGoal", activeGoal ?: JSONObject.NULL)
+        putNullable("focusSessionPlannedDuration", focusSessionPlannedDuration)
+        putNullable("focusSessionStartTime", focusSessionStartTime)
+        putNullable("activeGoal", activeGoal)
+        putNullable("sessionStartTime", sessionStartTime)
+        put("timeSpentMillis", timeSpentMillis)
+        put("recentAppHistory", JSONArray(recentAppHistory))
+        putNullable("previousContext", previousContext?.name)
+        putNullable("previousContextConfidence", previousContextConfidence)
+        putNullable("timeSinceLastIntervention", timeSinceLastIntervention)
+        putNullable("configuredNudgeDelay", configuredNudgeDelay)
+        put("isBreakState", isBreakState)
     }.toString()
+
+    private fun JSONObject.putNullable(key: String, value: Any?) {
+        put(key, value ?: JSONObject.NULL)
+    }
 
     companion object {
         private const val TAG = "ProxyContextAwareAgent"

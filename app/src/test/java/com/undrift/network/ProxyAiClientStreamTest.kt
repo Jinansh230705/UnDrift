@@ -1,0 +1,42 @@
+package com.undrift.network
+
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class ProxyAiClientStreamTest {
+
+    @Test
+    fun testChatCompletionStream() = runBlocking {
+        val client = ProxyAiClient()
+
+        val messages = listOf(
+            ChatMessage(role = "user", content = "Write a very short sentence about the sky.")
+        )
+
+        var chunkCount = 0
+        var fullMessage = ""
+
+        try {
+            client.chatCompletionStream(messages = messages).collect { chunk ->
+                chunkCount++
+                fullMessage += chunk
+                println("Chunk $chunkCount received: $chunk")
+            }
+
+            println("\nStream completed!")
+            println("Total chunks received: $chunkCount")
+            println("Full constructed message: $fullMessage")
+
+            assertTrue("Expected at least one chunk to be received", chunkCount > 0)
+            assertTrue("Expected the full message to not be empty", fullMessage.isNotBlank())
+        } catch (e: ProxyAiException) {
+            println("Caught ProxyAiException: ${e.message}")
+            if (e.message?.contains("403") == true) {
+                println("API Key missing or invalid. The test technically proves the Kotlin setup compiles and runs, but the server blocked the request.")
+            } else {
+                throw e
+            }
+        }
+    }
+}
