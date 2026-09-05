@@ -34,12 +34,11 @@ class FocusService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private lateinit var userPreferences: UserPreferences
     private val mongoRepository = MongoRepository()
-    private val rewardAgent: RewardLoopAgent by lazy {
-        ProxyRewardLoopAgent(ProxyAiClient(), LocalRewardLoopAgent.instance)
-    }
-    private val minimalInterventionAgent: MinimalInterventionAgent by lazy {
-        ProxyMinimalInterventionAgent(ProxyAiClient(), LocalMinimalInterventionAgent.instance)
-    }
+    private val rewardAgent: RewardLoopAgent
+        get() = ProxyRewardLoopAgent(ProxyAiClient.fromProfile(currentUserProfile), LocalRewardLoopAgent.instance)
+
+    private val minimalInterventionAgent: MinimalInterventionAgent
+        get() = ProxyMinimalInterventionAgent(ProxyAiClient.fromProfile(currentUserProfile), LocalMinimalInterventionAgent.instance)
     private var lastInterventionTime = 0L
     private var lastInterventionId: String? = null
     private var lastInterventionResponse: InterventionResponse? = null

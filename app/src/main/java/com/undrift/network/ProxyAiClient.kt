@@ -81,6 +81,14 @@ class ProxyAiClient(
             .readTimeout(20, TimeUnit.SECONDS)
             .writeTimeout(10, TimeUnit.SECONDS)
             .build()
+
+        fun fromProfile(profile: com.undrift.data.UserProfile?): ProxyAiClient {
+            val url = profile?.aiApiUrl?.trim()
+            val key = profile?.aiApiKey?.trim()
+            val effectiveUrl = if (!url.isNullOrBlank()) url else BuildConfig.PROXY_BASE_URL
+            val effectiveKey = if (!key.isNullOrBlank()) key else BuildConfig.PROXY_API_KEY
+            return ProxyAiClient(baseUrl = effectiveUrl, proxyApiKey = effectiveKey)
+        }
     }
 }
 

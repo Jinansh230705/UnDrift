@@ -49,11 +49,14 @@ fun AiAgentScreen(
     
     var hasUnsavedChanges by remember { mutableStateOf(false) }
 
-    val rewardAgent: RewardLoopAgent = remember {
-        ProxyRewardLoopAgent(ProxyAiClient(), LocalRewardLoopAgent.instance)
+    val aiClient = remember(apiUrl, apiKey) {
+        ProxyAiClient.fromProfile(userProfile.copy(aiApiUrl = apiUrl, aiApiKey = apiKey))
     }
-    val minimalInterventionAgent: MinimalInterventionAgent = remember {
-        ProxyMinimalInterventionAgent(ProxyAiClient(), LocalMinimalInterventionAgent.instance)
+    val rewardAgent: RewardLoopAgent = remember(aiClient) {
+        ProxyRewardLoopAgent(aiClient, LocalRewardLoopAgent.instance)
+    }
+    val minimalInterventionAgent: MinimalInterventionAgent = remember(aiClient) {
+        ProxyMinimalInterventionAgent(aiClient, LocalMinimalInterventionAgent.instance)
     }
     var simulatedIntervention by remember { mutableStateOf<MinimalInterventionOutput?>(null) }
     var simulatedScenarioName by remember { mutableStateOf<String?>(null) }

@@ -66,4 +66,25 @@ class ProxyMinimalInterventionAgentTest {
         assertNotNull(result.message)
         assertTrue(result.cooldownMinutes > 0)
     }
+
+    @Test
+    fun testInstantiationWithCustomProfileProxyClient() {
+        val profile = com.undrift.data.UserProfile(
+            name = "Test User",
+            email = "test@example.com",
+            aiApiUrl = "https://custom-proxy.example.com",
+            aiApiKey = "test-key-123"
+        )
+        val customClient = com.undrift.network.ProxyAiClient.fromProfile(profile)
+        val customAgent = ProxyMinimalInterventionAgent(client = customClient)
+        val input = MinimalInterventionInput(
+            context = "BREAK",
+            sessionDurationMinutes = 10,
+            isBreak = true,
+            currentActivity = "com.instagram.android"
+        )
+        val result = customAgent.decideIntervention(input)
+        assertFalse(result.intervene)
+        assertEquals(0, result.level)
+    }
 }
