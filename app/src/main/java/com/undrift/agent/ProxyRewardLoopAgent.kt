@@ -21,7 +21,6 @@ class ProxyRewardLoopAgent(
         if (repository.isDuplicate(input.eventId)) {
             return@runBlocking RewardOutput(RewardType.NONE, RewardMagnitude.LOW, null)
         }
-        repository.markProcessed(input.eventId)
 
         try {
             val response = client.chatCompletion(
@@ -39,16 +38,17 @@ class ProxyRewardLoopAgent(
             )
             val parsedOutput = parseOutput(response)
             if (parsedOutput != null) {
+                repository.markProcessed(input.eventId)
                 val record = RewardEvaluationRecord(input = input, output = parsedOutput)
                 repository.addRecord(record)
-                parsedOutput
-            } else {
-                fallback.evaluate(input)
+                return@runBlocking parsedOutput
             }
         } catch (error: Exception) {
             runCatching { Log.w(TAG, "Proxy reward evaluation failed; using local rules", error) }
-            fallback.evaluate(input)
         }
+
+        // Fallback to local evaluation rules which marks processed and logs to repository
+        return@runBlocking fallback.evaluate(input)
     }
 
     override fun getRecentEvaluations(): List<RewardEvaluationRecord> {

@@ -81,7 +81,12 @@ class FocusService : Service() {
         val notification = createNotification("UnDrift Active", "Monitoring app usage")
         try {
             if (Build.VERSION.SDK_INT >= 34) {
-                startForeground(1, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+                try {
+                    startForeground(1, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Special use FGS start failed, falling back to standard startForeground", e)
+                    startForeground(1, notification)
+                }
             } else {
                 startForeground(1, notification)
             }
@@ -284,15 +289,18 @@ class FocusService : Service() {
             else -> 1 // gap or first ever
         }
 
-        val actualMinutes = ((System.currentTimeMillis() - focusStartTime) / 60_000).toInt()
-        val plannedMinutes = ((focusEndTime - focusStartTime) / 60_000).toInt()
+        val actualMinutes = ((System.currentTimeMillis() - focusStartTime) / 60_000).toInt().coerceAtLeast(1)
+        val plannedMinutes = ((focusEndTime - focusStartTime) / 60_000).toInt().coerceAtLeast(1)
+        val totalDailyFocus = profile.focusDurationMinutes + actualMinutes
+
         val rewardInput = RewardEventInput(
             eventId = UUID.randomUUID().toString(),
             event = "FOCUS_SESSION_COMPLETED",
             plannedDurationMinutes = plannedMinutes,
             actualFocusDurationMinutes = actualMinutes,
             currentStreak = newStreak,
-            previousStreak = profile.streakCount
+            previousStreak = profile.streakCount,
+            dailyFocusMinutes = totalDailyFocus
         )
         val rewardOutput = rewardAgent.evaluate(rewardInput)
         
