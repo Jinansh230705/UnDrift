@@ -23,8 +23,10 @@ import com.adamglin.PhosphorIcons
 import com.adamglin.phosphoricons.Bold
 import com.adamglin.phosphoricons.bold.*
 import com.adamglin.phosphoricons.regular.*
+import com.undrift.agent.*
 import com.undrift.data.UserPreferences
 import com.undrift.data.UserProfile
+import com.undrift.network.ProxyAiClient
 import com.undrift.service.FocusService
 import com.undrift.ui.components.SquircleShape
 import kotlinx.coroutines.launch
@@ -46,6 +48,10 @@ fun AiAgentScreen(
     var isMonitoringEnabled by remember { mutableStateOf(userProfile.isMonitoringEnabled) }
     
     var hasUnsavedChanges by remember { mutableStateOf(false) }
+
+    val rewardAgent: RewardLoopAgent = remember {
+        ProxyRewardLoopAgent(ProxyAiClient(), LocalRewardLoopAgent.instance)
+    }
 
     LaunchedEffect(apiUrl, apiKey) {
         hasUnsavedChanges = apiUrl != userProfile.aiApiUrl || apiKey != userProfile.aiApiKey
@@ -131,7 +137,7 @@ fun AiAgentScreen(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "I continuously monitor your habits to reward good focus and nudge you away from distractions.",
+                    text = "Powered by AI Proxy & Local Rules. I continuously track your focus usage to reward you with coins and nudge you away from distractions.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
                     textAlign = TextAlign.Center,
@@ -159,7 +165,7 @@ fun AiAgentScreen(
                         Icon(PhosphorIcons.Bold.Coins, contentDescription = "Points", tint = Color(0xFFFFC107), modifier = Modifier.size(32.dp))
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(text = "${userProfile.points}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                        Text(text = "Total Earned", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(text = "Focus Coins", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 
@@ -223,12 +229,12 @@ fun AiAgentScreen(
                     
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Background Monitoring",
+                            text = "AI Context & Focus Monitoring",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = if (isMonitoringEnabled) "Active • Watching for distractions" else "Paused • App limits are ignored",
+                            text = if (isMonitoringEnabled) "Active • Tracking focus usage & protecting workflow" else "Paused • App limits are ignored",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                         )
@@ -262,8 +268,6 @@ fun AiAgentScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            Spacer(modifier = Modifier.height(32.dp))
-
             // Interactive Agent Simulator
             Text(
                 text = "Test Agent Triggers",
@@ -273,13 +277,13 @@ fun AiAgentScreen(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Simulate behavioral events to test how the Reward Loop Agent evaluates progress and awards points.",
+                text = "Simulate behavioral events to test how the AI Reward Loop Agent evaluates progress and awards coins.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
             )
             Spacer(modifier = Modifier.height(12.dp))
 
-            val evaluations by com.undrift.agent.LocalRewardLoopAgent.evaluationsFlow.collectAsState()
+            val evaluations by LocalRewardLoopAgent.evaluationsFlow.collectAsState()
 
             Column(
                 modifier = Modifier.fillMaxWidth(),
@@ -291,44 +295,49 @@ fun AiAgentScreen(
                 ) {
                     Button(
                         onClick = {
-                            val input = com.undrift.agent.RewardEventInput(
-                                event = "FOCUS_SESSION_COMPLETED",
-                                plannedDurationMinutes = 25,
-                                actualFocusDurationMinutes = 25
-                            )
-                            val output = com.undrift.agent.LocalRewardLoopAgent.instance.evaluate(input)
-                            val pts = when (output.magnitude) {
-                                com.undrift.agent.RewardMagnitude.HIGH -> 500
-                                com.undrift.agent.RewardMagnitude.MEDIUM -> 300
-                                com.undrift.agent.RewardMagnitude.LOW -> 100
+                            scope.launch {
+                                val input = RewardEventInput(
+                                    event = "FOCUS_USAGE_PROGRESS",
+                                    actualFocusDurationMinutes = 10
+                                )
+                                val output = rewardAgent.evaluate(input)
+                                val pts = when (output.magnitude) {
+                                    RewardMagnitude.HIGH -> 30
+                                    RewardMagnitude.MEDIUM -> 20
+                                    RewardMagnitude.LOW -> 10
+                                }
+                                userPreferences.updatePoints(pts)
                             }
-                            scope.launch { userPreferences.updatePoints(pts) }
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = SquircleShape(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF009688))
+                    ) {
+                        Text("10m Usage (+10)", fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                val input = RewardEventInput(
+                                    event = "FOCUS_SESSION_COMPLETED",
+                                    plannedDurationMinutes = 25,
+                                    actualFocusDurationMinutes = 25
+                                )
+                                val output = rewardAgent.evaluate(input)
+                                val pts = when (output.magnitude) {
+                                    RewardMagnitude.HIGH -> 500
+                                    RewardMagnitude.MEDIUM -> 300
+                                    RewardMagnitude.LOW -> 100
+                                }
+                                userPreferences.updatePoints(pts)
+                            }
                         },
                         modifier = Modifier.weight(1f),
                         shape = SquircleShape(),
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
                     ) {
-                        Text("25m Focus", fontSize = androidx.compose.ui.unit.TextUnit.Unspecified, fontWeight = FontWeight.Bold)
-                    }
-
-                    Button(
-                        onClick = {
-                            val input = com.undrift.agent.RewardEventInput(
-                                event = "DISTRACTION_RECOVERED"
-                            )
-                            val output = com.undrift.agent.LocalRewardLoopAgent.instance.evaluate(input)
-                            val pts = when (output.magnitude) {
-                                com.undrift.agent.RewardMagnitude.HIGH -> 50
-                                com.undrift.agent.RewardMagnitude.MEDIUM -> 25
-                                com.undrift.agent.RewardMagnitude.LOW -> 10
-                            }
-                            scope.launch { userPreferences.updatePoints(pts) }
-                        },
-                        modifier = Modifier.weight(1f),
-                        shape = SquircleShape(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3))
-                    ) {
-                        Text("Recovery", fontWeight = FontWeight.Bold)
+                        Text("25m Session", fontWeight = FontWeight.Bold)
                     }
                 }
 
@@ -338,49 +347,49 @@ fun AiAgentScreen(
                 ) {
                     Button(
                         onClick = {
-                            val input = com.undrift.agent.RewardEventInput(
-                                event = "FOCUS_SESSION_COMPLETED",
-                                plannedDurationMinutes = 20,
-                                actualFocusDurationMinutes = 20,
-                                dailyFocusMinutes = 125
-                            )
-                            val output = com.undrift.agent.LocalRewardLoopAgent.instance.evaluate(input)
-                            val pts = when (output.magnitude) {
-                                com.undrift.agent.RewardMagnitude.HIGH -> 500
-                                com.undrift.agent.RewardMagnitude.MEDIUM -> 300
-                                com.undrift.agent.RewardMagnitude.LOW -> 100
+                            scope.launch {
+                                val input = RewardEventInput(
+                                    event = "DISTRACTION_RECOVERED"
+                                )
+                                val output = rewardAgent.evaluate(input)
+                                val pts = when (output.magnitude) {
+                                    RewardMagnitude.HIGH -> 50
+                                    RewardMagnitude.MEDIUM -> 25
+                                    RewardMagnitude.LOW -> 10
+                                }
+                                userPreferences.updatePoints(pts)
                             }
-                            scope.launch { userPreferences.updatePoints(pts) }
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = SquircleShape(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3))
+                    ) {
+                        Text("Recovery (+25)", fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                val input = RewardEventInput(
+                                    event = "FOCUS_SESSION_COMPLETED",
+                                    plannedDurationMinutes = 20,
+                                    actualFocusDurationMinutes = 20,
+                                    dailyFocusMinutes = 125
+                                )
+                                val output = rewardAgent.evaluate(input)
+                                val pts = when (output.magnitude) {
+                                    RewardMagnitude.HIGH -> 500
+                                    RewardMagnitude.MEDIUM -> 300
+                                    RewardMagnitude.LOW -> 100
+                                }
+                                userPreferences.updatePoints(pts)
+                            }
                         },
                         modifier = Modifier.weight(1f),
                         shape = SquircleShape(),
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF9C27B0))
                     ) {
                         Text("2h Milestone", fontWeight = FontWeight.Bold)
-                    }
-
-                    Button(
-                        onClick = {
-                            val input = com.undrift.agent.RewardEventInput(
-                                event = "FOCUS_SESSION_COMPLETED",
-                                plannedDurationMinutes = 25,
-                                actualFocusDurationMinutes = 25,
-                                currentStreak = 3,
-                                previousStreak = 2
-                            )
-                            val output = com.undrift.agent.LocalRewardLoopAgent.instance.evaluate(input)
-                            val pts = when (output.magnitude) {
-                                com.undrift.agent.RewardMagnitude.HIGH -> 500
-                                com.undrift.agent.RewardMagnitude.MEDIUM -> 300
-                                com.undrift.agent.RewardMagnitude.LOW -> 100
-                            }
-                            scope.launch { userPreferences.updatePoints(pts) }
-                        },
-                        modifier = Modifier.weight(1f),
-                        shape = SquircleShape(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
-                    ) {
-                        Text("3d Streak", fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -401,7 +410,7 @@ fun AiAgentScreen(
                 )
 
                 if (evaluations.isNotEmpty()) {
-                    TextButton(onClick = { com.undrift.agent.LocalRewardLoopAgent.instance.clearEvaluations() }) {
+                    TextButton(onClick = { rewardAgent.clearEvaluations() }) {
                         Text("Clear Log", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
                     }
                 }
@@ -437,7 +446,7 @@ fun AiAgentScreen(
 
             // How it works / Triggers
             Text(
-                text = "How The Agent Works",
+                text = "How The Agent Rewards You",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
@@ -445,21 +454,27 @@ fun AiAgentScreen(
             Spacer(modifier = Modifier.height(8.dp))
             
             TriggerCard(
+                icon = PhosphorIcons.Bold.Timer,
+                title = "Focus Usage Tracking",
+                description = "Earn continuous small coin bonuses (10-30 coins) every 5 minutes while staying active in focus mode.",
+                iconTint = Color(0xFF009688)
+            )
+            TriggerCard(
                 icon = PhosphorIcons.Bold.CheckCircle,
                 title = "Session Completion",
-                description = "Earn 300+ points when you successfully complete a timed focus session without breaking it.",
+                description = "Earn 300+ coins when you successfully complete a full timed focus session.",
                 iconTint = Color(0xFF4CAF50)
             )
             TriggerCard(
                 icon = PhosphorIcons.Bold.ArrowUUpLeft,
                 title = "Distraction Recovery",
-                description = "Earn 50 points when the agent blocks a distracting app and you choose to return to focus.",
+                description = "Earn 25-50 coins when the agent blocks a distracting app and you return to work.",
                 iconTint = Color(0xFF2196F3)
             )
             TriggerCard(
                 icon = PhosphorIcons.Bold.Medal,
                 title = "Milestones & Consistency",
-                description = "Get massive bonuses (500 points) for hitting 2 hours of focus in a day or building a multi-day streak.",
+                description = "Get massive bonuses (500 coins) for hitting 2 hours of daily focus or keeping multi-day streaks.",
                 iconTint = Color(0xFF9C27B0)
             )
 
@@ -473,7 +488,7 @@ fun AiAgentScreen(
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Connect an external LLM (like OpenAI or Gemini) to analyze your on-screen context and detect Doom Scrolling intelligently instead of just using rigid timers.",
+                text = "Connect an external LLM endpoint to analyze on-screen context and intelligently filter distractions.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
             )
@@ -520,14 +535,14 @@ fun AiAgentScreen(
 }
 
 @Composable
-fun EvaluationRecordCard(record: com.undrift.agent.RewardEvaluationRecord) {
+fun EvaluationRecordCard(record: RewardEvaluationRecord) {
     val badgeColor = when (record.output.type) {
-        com.undrift.agent.RewardType.SESSION_COMPLETION -> Color(0xFF4CAF50)
-        com.undrift.agent.RewardType.RECOVERY -> Color(0xFF2196F3)
-        com.undrift.agent.RewardType.MILESTONE -> Color(0xFF9C27B0)
-        com.undrift.agent.RewardType.CONSISTENCY -> Color(0xFFFF9800)
-        com.undrift.agent.RewardType.PROGRESS -> Color(0xFF009688)
-        com.undrift.agent.RewardType.NONE -> Color.Gray
+        RewardType.SESSION_COMPLETION -> Color(0xFF4CAF50)
+        RewardType.RECOVERY -> Color(0xFF2196F3)
+        RewardType.MILESTONE -> Color(0xFF9C27B0)
+        RewardType.CONSISTENCY -> Color(0xFFFF9800)
+        RewardType.PROGRESS -> Color(0xFF009688)
+        RewardType.NONE -> Color.Gray
     }
 
     Card(

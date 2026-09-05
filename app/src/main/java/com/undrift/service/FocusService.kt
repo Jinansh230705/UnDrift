@@ -28,12 +28,15 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import java.util.*
 import com.undrift.agent.*
+import com.undrift.network.ProxyAiClient
 
 class FocusService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private lateinit var userPreferences: UserPreferences
     private val mongoRepository = MongoRepository()
-    private val rewardAgent: RewardLoopAgent = LocalRewardLoopAgent.instance
+    private val rewardAgent: RewardLoopAgent by lazy {
+        ProxyRewardLoopAgent(ProxyAiClient(), LocalRewardLoopAgent.instance)
+    }
     
     private var isFocusModeActive = false
     private var focusEndTime = 0L
@@ -199,12 +202,38 @@ class FocusService : Service() {
             Log.e(TAG, "Failed to update foreground service state", e)
         }
         
+        var lastUsageRewardTime = System.currentTimeMillis()
         monitoringJob?.cancel()
         monitoringJob = serviceScope.launch {
             while (isFocusModeActive) {
-                if (System.currentTimeMillis() >= focusEndTime) {
+                val now = System.currentTimeMillis()
+                if (now >= focusEndTime) {
                     completeFocusSession()
                     break
+                }
+                
+                // Track focus usage: Every 5 minutes (300_000 ms), award small focus usage coins
+                if (now - lastUsageRewardTime >= 300_000L) {
+                    lastUsageRewardTime = now
+                    val focusMinutesAccrued = ((now - focusStartTime) / 60_000L).toInt()
+                    val rewardInput = RewardEventInput(
+                        eventId = UUID.randomUUID().toString(),
+                        event = "FOCUS_USAGE_PROGRESS",
+                        actualFocusDurationMinutes = focusMinutesAccrued
+                    )
+                    val rewardOutput = rewardAgent.evaluate(rewardInput)
+                    if (rewardOutput.type != RewardType.NONE) {
+                        val smallCoins = when (rewardOutput.magnitude) {
+                            RewardMagnitude.HIGH -> 30
+                            RewardMagnitude.MEDIUM -> 20
+                            RewardMagnitude.LOW -> 10
+                        }
+                        userPreferences.updatePoints(smallCoins)
+                        currentUserProfile?.let { prof ->
+                            mongoRepository.updateUserStats(prof.email, prof.points + smallCoins, prof.streakCount, prof.streakHistory)
+                        }
+                        showRewardNotification(smallCoins, rewardOutput.message ?: "Earned coins for focus usage!")
+                    }
                 }
                 delay(2000)
             }
@@ -581,17 +610,19 @@ class FocusService : Service() {
                     eventId = UUID.randomUUID().toString(),
                     event = "DISTRACTION_RECOVERED"
                 )
-                val rewardOutput = rewardAgent.evaluate(rewardInput)
-                val pointsToAward = when(rewardOutput.magnitude) {
-                    RewardMagnitude.HIGH -> 50
-                    RewardMagnitude.MEDIUM -> 25
-                    RewardMagnitude.LOW -> 10
-                }
-                
-                if (rewardOutput.type != RewardType.NONE) {
-                    serviceScope.launch { userPreferences.updatePoints(pointsToAward) }
-                    mainHandler.post {
-                        Toast.makeText(ctx, "Agent: +$pointsToAward points! ${rewardOutput.message ?: "Great recovery."}", Toast.LENGTH_LONG).show()
+                serviceScope.launch {
+                    val rewardOutput = rewardAgent.evaluate(rewardInput)
+                    val pointsToAward = when(rewardOutput.magnitude) {
+                        RewardMagnitude.HIGH -> 50
+                        RewardMagnitude.MEDIUM -> 25
+                        RewardMagnitude.LOW -> 10
+                    }
+                    
+                    if (rewardOutput.type != RewardType.NONE) {
+                        userPreferences.updatePoints(pointsToAward)
+                        mainHandler.post {
+                            Toast.makeText(ctx, "Agent: +$pointsToAward points! ${rewardOutput.message ?: "Great recovery."}", Toast.LENGTH_LONG).show()
+                        }
                     }
                 }
                 

@@ -16,10 +16,22 @@ android {
         applicationId = "com.undrift"
         minSdk = 24
         targetSdk = 35
-        versionCode = 12
-        versionName = "1.0.12-stable"
+        versionCode = 14
+        versionName = "1.0.14-stable"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField("String", "PROXY_BASE_URL", "\"https://undriftapis.jinansh.workers.dev\"")
+        buildConfigField(
+            "String",
+            "PROXY_API_KEY",
+            "\"${project.findProperty("PROXY_API_KEY")?.toString().orEmpty().replace("\\", "\\\\").replace("\"", "\\\"")}\""
+        )
+    }
+
+    buildFeatures {
+        compose = true
+        buildConfig = true
     }
 
     signingConfigs {
@@ -62,9 +74,6 @@ android {
         freeCompilerArgs = freeCompilerArgs + listOf("-Xskip-metadata-version-check")
     }
     
-    buildFeatures {
-        compose = true
-    }
     packaging {
         resources {
             excludes += "/META-INF/native-image/native-image.properties"
@@ -89,6 +98,8 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation("com.adamglin:phosphor-icon:1.0.0")
     implementation("io.github.stoyan-vuchev:squircle-shape-android:4.0.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("dev.chrisbanes.haze:haze:1.1.1")
 
     testImplementation(libs.junit)
