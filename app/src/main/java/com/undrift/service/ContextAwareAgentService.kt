@@ -50,54 +50,70 @@ class ContextAwareAgentService : AccessibilityService() {
         }
     }
 
+    private var lastScanTime = 0L
+
     private fun scanForImportantTasks() {
+        val now = System.currentTimeMillis()
+        if (now - lastScanTime < 500) return
+        lastScanTime = now
+
         try {
             val rootNode = rootInActiveWindow ?: return
             
             var isImportant = false
+            val nodesToRecycle = mutableListOf<AccessibilityNodeInfo>()
             val queue = ArrayDeque<AccessibilityNodeInfo>()
             queue.add(rootNode)
+            nodesToRecycle.add(rootNode)
             
             var nodesChecked = 0
-            while (queue.isNotEmpty() && nodesChecked < 100) {
+            while (queue.isNotEmpty() && nodesChecked < 60) {
                 val node = queue.removeFirst()
                 nodesChecked++
                 
-                val className = node.className?.toString() ?: ""
-                val viewId = node.viewIdResourceName ?: ""
-                val text = node.text?.toString()?.lowercase() ?: ""
-                
-                // Heuristics for Important Tasks
-                // 1. Messaging/Emails (EditText focused)
-                if (className.contains("EditText")) {
-                    isImportant = true
-                    break
-                }
-                // 2. Chat inputs
-                if (viewId.contains("message_input") || viewId.contains("compose") || viewId.contains("reply")) {
-                    isImportant = true
-                    break
-                }
-                // 3. Document editing / creation
-                if (text.contains("type a message") || text.contains("write a comment")) {
-                    isImportant = true
-                    break
-                }
+                try {
+                    val className = node.className?.toString() ?: ""
+                    val viewId = node.viewIdResourceName ?: ""
+                    val text = node.text?.toString()?.lowercase() ?: ""
+                    
+                    // Heuristics for Important Tasks
+                    if (className.contains("EditText")) {
+                        isImportant = true
+                        break
+                    }
+                    if (viewId.contains("message_input") || viewId.contains("compose") || viewId.contains("reply")) {
+                        isImportant = true
+                        break
+                    }
+                    if (text.contains("type a message") || text.contains("write a comment")) {
+                        isImportant = true
+                        break
+                    }
 
-                for (i in 0 until node.childCount) {
-                    node.getChild(i)?.let { queue.add(it) }
+                    for (i in 0 until node.childCount) {
+                        node.getChild(i)?.let { child ->
+                            queue.add(child)
+                            nodesToRecycle.add(child)
+                        }
+                    }
+                } catch (e: Throwable) {
+                    Log.w(TAG, "Error reading node info: ${e.message}")
                 }
             }
             
+            // Clean up and recycle all allocated node infos
+            for (nodeToRecycle in nodesToRecycle) {
+                runCatching { nodeToRecycle.recycle() }
+            }
+
             if (isImportant) {
                 _currentContext.value = UserContext.IMPORTANT_TASK
             } else {
-                // Revert to UNKNOWN if we were important but left the important screen
                 if (_currentContext.value == UserContext.IMPORTANT_TASK) {
                     _currentContext.value = UserContext.UNKNOWN
                 }
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Error scanning for important tasks", e)
         }
     }
