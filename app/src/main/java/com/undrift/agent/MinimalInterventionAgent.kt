@@ -1,90 +1,112 @@
 package com.undrift.agent
 
-enum class InterventionLevel {
-    NONE,
-    SOFT_NUDGE,
-    STRICT_OVERLAY
+import java.util.UUID
+
+enum class InterventionLevel(val value: Int) {
+    NONE(0),
+    AWARENESS(1),
+    REFLECTION(2),
+    RETURN_TO_FOCUS(3);
+
+    companion object {
+        fun fromInt(value: Int): InterventionLevel =
+            entries.find { it.value == value } ?: NONE
+    }
 }
 
-data class InterventionDecisionInput(
-    val packageName: String,
-    val contextAssessment: ContextAssessmentOutput,
-    val isFocusModeActive: Boolean,
-    val timeSpentMillis: Long,
-    val timeLimitMillis: Long? = null,
-    val lastInterventionTimestamp: Long = 0L,
-    val cooldownMillis: Long = 60_000L
+enum class ActivityCompatibility {
+    CONSISTENT,
+    INCONSISTENT,
+    NEUTRAL,
+    UNKNOWN
+}
+
+enum class InterventionResponse {
+    IGNORED,
+    ACKNOWLEDGED,
+    RETURNED_TO_FOCUS,
+    DISMISSED
+}
+
+data class MinimalInterventionInput(
+    val context: String = "UNKNOWN",
+    val contextConfidence: Double = 0.5,
+    val currentActivity: String,
+    val activityCompatibility: ActivityCompatibility = ActivityCompatibility.UNKNOWN,
+    val sessionDurationMinutes: Int = 0,
+    val focusSessionActive: Boolean = false,
+    val declaredTask: String? = null,
+    val recentInterventions: Int = 0,
+    val minutesSinceLastIntervention: Int = Int.MAX_VALUE,
+    val previousInterventionResponse: InterventionResponse? = null,
+    val isBreak: Boolean = false,
+    val userSchedule: String? = null
 )
 
-data class InterventionDecisionOutput(
-    val shouldIntervene: Boolean,
-    val level: InterventionLevel,
-    val reason: String?,
-    val cooldownActive: Boolean
+data class MinimalInterventionOutput(
+    val intervene: Boolean,
+    val level: Int,
+    val message: String?,
+    val reason: String,
+    val confidence: Double,
+    val cooldownMinutes: Int
+) {
+    val interventionLevel: InterventionLevel
+        get() = InterventionLevel.fromInt(level)
+
+    companion object {
+        fun noIntervention(
+            reason: String = "Insufficient evidence that intervention would be helpful.",
+            confidence: Double = 0.8,
+            cooldownMinutes: Int = 0
+        ) = MinimalInterventionOutput(
+            intervene = false,
+            level = 0,
+            message = null,
+            reason = reason,
+            confidence = confidence.coerceIn(0.0, 1.0),
+            cooldownMinutes = cooldownMinutes.coerceAtLeast(0)
+        )
+    }
+}
+
+data class InterventionRecord(
+    val id: String = UUID.randomUUID().toString(),
+    val timestamp: Long = System.currentTimeMillis(),
+    val input: MinimalInterventionInput,
+    val output: MinimalInterventionOutput,
+    var response: InterventionResponse? = null
 )
 
 interface MinimalInterventionAgent {
-    fun decideIntervention(input: InterventionDecisionInput): InterventionDecisionOutput
+    fun decideIntervention(input: MinimalInterventionInput): MinimalInterventionOutput
+    fun recordOutcome(recordId: String, response: InterventionResponse) {}
+    fun getRecentInterventions(): List<InterventionRecord> = emptyList()
+    fun clearHistory() {}
 }
 
-class LocalMinimalInterventionAgent : MinimalInterventionAgent {
-    override fun decideIntervention(input: InterventionDecisionInput): InterventionDecisionOutput {
-        val now = System.currentTimeMillis()
-        val timeSinceLast = now - input.lastInterventionTimestamp
-        val isCooldownActive = timeSinceLast < input.cooldownMillis
+class LocalMinimalInterventionAgent(
+    private val evaluator: MinimalInterventionEvaluator = MinimalInterventionEvaluator(),
+    private val repository: InterventionRepository = InterventionRepository.instance
+) : MinimalInterventionAgent {
 
-        if (input.contextAssessment.context == UserContext.IMPORTANT_TASK) {
-            return InterventionDecisionOutput(
-                shouldIntervene = false,
-                level = InterventionLevel.NONE,
-                reason = "User is engaged in an important task. Cooldown / bypass active.",
-                cooldownActive = isCooldownActive
-            )
-        }
+    override fun decideIntervention(input: MinimalInterventionInput): MinimalInterventionOutput {
+        val output = evaluator.evaluate(input)
+        val record = InterventionRecord(input = input, output = output)
+        repository.addRecord(record)
+        return output
+    }
 
-        if (input.isFocusModeActive && input.contextAssessment.context == UserContext.POTENTIAL_DISTRACTION) {
-            if (isCooldownActive) {
-                return InterventionDecisionOutput(
-                    shouldIntervene = false,
-                    level = InterventionLevel.NONE,
-                    reason = "Intervention cooldown active to prevent spamming the user.",
-                    cooldownActive = true
-                )
-            }
+    override fun recordOutcome(recordId: String, response: InterventionResponse) {
+        repository.recordOutcome(recordId, response)
+    }
 
-            return InterventionDecisionOutput(
-                shouldIntervene = true,
-                level = InterventionLevel.STRICT_OVERLAY,
-                reason = "Focus mode is active and user accessed a distracting application.",
-                cooldownActive = false
-            )
-        }
+    override fun getRecentInterventions(): List<InterventionRecord> {
+        return repository.getRecentRecords()
+    }
 
-        val limit = input.timeLimitMillis ?: 0L
-        if (limit > 0 && input.timeSpentMillis >= limit) {
-            if (isCooldownActive) {
-                return InterventionDecisionOutput(
-                    shouldIntervene = false,
-                    level = InterventionLevel.NONE,
-                    reason = "Daily app limit reached, but intervention cooldown active.",
-                    cooldownActive = true
-                )
-            }
-
-            return InterventionDecisionOutput(
-                shouldIntervene = true,
-                level = InterventionLevel.STRICT_OVERLAY,
-                reason = "Daily application usage limit exceeded.",
-                cooldownActive = false
-            )
-        }
-
-        return InterventionDecisionOutput(
-            shouldIntervene = false,
-            level = InterventionLevel.NONE,
-            reason = "No intervention necessary.",
-            cooldownActive = isCooldownActive
-        )
+    override fun clearHistory() {
+        repository.clear()
     }
 
     companion object {

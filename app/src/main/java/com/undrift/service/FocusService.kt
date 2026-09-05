@@ -37,6 +37,12 @@ class FocusService : Service() {
     private val rewardAgent: RewardLoopAgent by lazy {
         ProxyRewardLoopAgent(ProxyAiClient(), LocalRewardLoopAgent.instance)
     }
+    private val minimalInterventionAgent: MinimalInterventionAgent by lazy {
+        ProxyMinimalInterventionAgent(ProxyAiClient(), LocalMinimalInterventionAgent.instance)
+    }
+    private var lastInterventionTime = 0L
+    private var lastInterventionId: String? = null
+    private var lastInterventionResponse: InterventionResponse? = null
     
     private var isFocusModeActive = false
     private var focusEndTime = 0L
@@ -346,9 +352,41 @@ class FocusService : Service() {
             return
         }
 
-        // 1. Focus Mode strict block
+        // 1. Minimal Intervention & Focus Mode Check
         if (isFocusModeActive && profile.blockedApps.contains(foregroundPkg)) {
-            showOverlay(foregroundPkg, "STRICT_BLOCK", profile.points)
+            val minutesSinceLast = if (lastInterventionTime == 0L) 999 else ((System.currentTimeMillis() - lastInterventionTime) / 60_000L).toInt()
+            val sessionMinutes = (currentForegroundUsageToday / 60_000L).toInt()
+
+            val interventionInput = MinimalInterventionInput(
+                context = currentContext.name,
+                contextConfidence = 0.90,
+                currentActivity = foregroundPkg,
+                activityCompatibility = ActivityCompatibility.INCONSISTENT,
+                sessionDurationMinutes = sessionMinutes,
+                focusSessionActive = isFocusModeActive,
+                declaredTask = "Focus Session",
+                minutesSinceLastIntervention = minutesSinceLast,
+                previousInterventionResponse = lastInterventionResponse
+            )
+
+            val decision = minimalInterventionAgent.decideIntervention(interventionInput)
+            if (!decision.intervene) {
+                Log.d(TAG, "MinimalInterventionAgent: Silence preferred (${decision.reason})")
+                return
+            }
+
+            lastInterventionTime = System.currentTimeMillis()
+            val record = InterventionRepository.instance.getLastInterventionRecord()
+            lastInterventionId = record?.id
+
+            when (decision.level) {
+                1 -> {
+                    showGentleAwarenessNotification(foregroundPkg, decision.message ?: "You've been on this for a bit.")
+                }
+                2, 3 -> {
+                    showOverlay(foregroundPkg, decision.message ?: "Want to get back to what you were working on?", profile.points)
+                }
+            }
             return
         }
 
@@ -626,6 +664,11 @@ class FocusService : Service() {
                     }
                 }
                 
+                lastInterventionResponse = InterventionResponse.RETURNED_TO_FOCUS
+                lastInterventionId?.let { id ->
+                    minimalInterventionAgent.recordOutcome(id, InterventionResponse.RETURNED_TO_FOCUS)
+                }
+
                 lastHomeActionTime = System.currentTimeMillis()
                 dismissOverlay()
                 try {
@@ -659,6 +702,10 @@ class FocusService : Service() {
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(56)
             ).apply { bottomMargin = dp(20) }
             setOnClickListener {
+                lastInterventionResponse = InterventionResponse.ACKNOWLEDGED
+                lastInterventionId?.let { id ->
+                    minimalInterventionAgent.recordOutcome(id, InterventionResponse.ACKNOWLEDGED)
+                }
                 if (hasEnoughCoins) {
                     grantTempAccess(blockedPkg, 20)
                 } else {
@@ -705,6 +752,25 @@ class FocusService : Service() {
     }
 
     // ─── Notifications ───────────────────────────────────────────────────
+
+    private fun showGentleAwarenessNotification(pkgName: String, message: String) {
+        val now = System.currentTimeMillis()
+        val key = pkgName + "_awareness"
+        val last = notificationTimestamps[key] ?: 0L
+        if (now - last < 60_000) return
+        notificationTimestamps[key] = now
+
+        val notification = NotificationCompat.Builder(this, "focus_channel")
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("UnDrift Awareness")
+            .setContentText(message)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setAutoCancel(true)
+            .build()
+
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.notify(pkgName.hashCode() + 200, notification)
+    }
 
     private fun showWarningNotification(pkgName: String, secondsLeft: Long) {
         val now = System.currentTimeMillis()

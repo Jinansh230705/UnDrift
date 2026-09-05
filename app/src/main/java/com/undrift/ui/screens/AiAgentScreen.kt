@@ -52,6 +52,12 @@ fun AiAgentScreen(
     val rewardAgent: RewardLoopAgent = remember {
         ProxyRewardLoopAgent(ProxyAiClient(), LocalRewardLoopAgent.instance)
     }
+    val minimalInterventionAgent: MinimalInterventionAgent = remember {
+        ProxyMinimalInterventionAgent(ProxyAiClient(), LocalMinimalInterventionAgent.instance)
+    }
+    var simulatedIntervention by remember { mutableStateOf<MinimalInterventionOutput?>(null) }
+    var simulatedScenarioName by remember { mutableStateOf<String?>(null) }
+    val interventions by InterventionRepository.instance.interventionsFlow.collectAsState()
 
     LaunchedEffect(apiUrl, apiKey) {
         hasUnsavedChanges = apiUrl != userProfile.aiApiUrl || apiKey != userProfile.aiApiKey
@@ -268,9 +274,313 @@ fun AiAgentScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Interactive Agent Simulator
+            // ─── Minimal-Intervention Agent Section ─────────────────────────────
             Text(
-                text = "Test Agent Triggers",
+                text = "Minimal-Intervention Agent",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "The decision-making layer: consumes context signals and determines the least intrusive intervention. Silence is valid and often preferable.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Scenarios Grid
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                simulatedScenarioName = "Brief Check (20s on Instagram)"
+                                simulatedIntervention = minimalInterventionAgent.decideIntervention(
+                                    MinimalInterventionInput(
+                                        context = "FOCUSED",
+                                        contextConfidence = 0.90,
+                                        currentActivity = "com.instagram.android",
+                                        activityCompatibility = ActivityCompatibility.INCONSISTENT,
+                                        sessionDurationMinutes = 1,
+                                        focusSessionActive = true,
+                                        declaredTask = "Study"
+                                    )
+                                )
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = SquircleShape(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF546E7A))
+                    ) {
+                        Text("20s App (Level 0)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                    }
+
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                simulatedScenarioName = "Initial Drift (3m on Instagram)"
+                                simulatedIntervention = minimalInterventionAgent.decideIntervention(
+                                    MinimalInterventionInput(
+                                        context = "FOCUSED",
+                                        contextConfidence = 0.85,
+                                        currentActivity = "com.instagram.android",
+                                        activityCompatibility = ActivityCompatibility.INCONSISTENT,
+                                        sessionDurationMinutes = 3,
+                                        focusSessionActive = true,
+                                        declaredTask = "Finish essay"
+                                    )
+                                )
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = SquircleShape(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00ACC1))
+                    ) {
+                        Text("3m Drift (Level 1)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                simulatedScenarioName = "Persistent Inconsistency (8m)"
+                                simulatedIntervention = minimalInterventionAgent.decideIntervention(
+                                    MinimalInterventionInput(
+                                        context = "FOCUSED",
+                                        contextConfidence = 0.88,
+                                        currentActivity = "com.instagram.android",
+                                        activityCompatibility = ActivityCompatibility.INCONSISTENT,
+                                        sessionDurationMinutes = 8,
+                                        focusSessionActive = true,
+                                        declaredTask = "Code Refactoring"
+                                    )
+                                )
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = SquircleShape(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB300))
+                    ) {
+                        Text("8m Drift (Level 2)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                    }
+
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                simulatedScenarioName = "Focus Session Distraction (12m)"
+                                simulatedIntervention = minimalInterventionAgent.decideIntervention(
+                                    MinimalInterventionInput(
+                                        context = "FOCUSED",
+                                        contextConfidence = 0.95,
+                                        currentActivity = "com.instagram.android",
+                                        activityCompatibility = ActivityCompatibility.INCONSISTENT,
+                                        sessionDurationMinutes = 12,
+                                        focusSessionActive = true,
+                                        declaredTask = "Study for exam",
+                                        recentInterventions = 1,
+                                        minutesSinceLastIntervention = 30
+                                    )
+                                )
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = SquircleShape(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935))
+                    ) {
+                        Text("12m Focus (Level 3)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                simulatedScenarioName = "Ignored Nudge Conservative Backoff"
+                                simulatedIntervention = minimalInterventionAgent.decideIntervention(
+                                    MinimalInterventionInput(
+                                        context = "FOCUSED",
+                                        contextConfidence = 0.90,
+                                        currentActivity = "com.instagram.android",
+                                        activityCompatibility = ActivityCompatibility.INCONSISTENT,
+                                        sessionDurationMinutes = 4,
+                                        focusSessionActive = true,
+                                        previousInterventionResponse = InterventionResponse.IGNORED,
+                                        minutesSinceLastIntervention = 35
+                                    )
+                                )
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = SquircleShape(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6D4C41))
+                    ) {
+                        Text("Ignored Backoff", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                    }
+
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                simulatedScenarioName = "Legitimate Break (15m Instagram)"
+                                simulatedIntervention = minimalInterventionAgent.decideIntervention(
+                                    MinimalInterventionInput(
+                                        context = "BREAK",
+                                        contextConfidence = 0.95,
+                                        currentActivity = "com.instagram.android",
+                                        activityCompatibility = ActivityCompatibility.INCONSISTENT,
+                                        sessionDurationMinutes = 15,
+                                        isBreak = true
+                                    )
+                                )
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = SquircleShape(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3949AB))
+                    ) {
+                        Text("Break Mode (Silence)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+
+            // Simulated Decision Result Card
+            simulatedIntervention?.let { decision ->
+                Spacer(modifier = Modifier.height(12.dp))
+                val badgeColor = when (decision.level) {
+                    0 -> Color(0xFF78909C)
+                    1 -> Color(0xFF00ACC1)
+                    2 -> Color(0xFFFFB300)
+                    3 -> Color(0xFFE53935)
+                    else -> MaterialTheme.colorScheme.primary
+                }
+
+                Card(
+                    shape = SquircleShape(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(
+                                color = badgeColor.copy(alpha = 0.2f),
+                                shape = SquircleShape()
+                            ) {
+                                Text(
+                                    text = if (decision.intervene) "LEVEL ${decision.level}: ${decision.interventionLevel.name}" else "LEVEL 0: NO INTERVENTION",
+                                    color = badgeColor,
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+
+                            Text(
+                                text = "Cooldown: ${decision.cooldownMinutes}m",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        simulatedScenarioName?.let {
+                            Text(text = "Scenario: $it", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(modifier = Modifier.height(4.dp))
+                        }
+
+                        if (decision.message != null) {
+                            Text(
+                                text = "\"${decision.message}\"",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        } else {
+                            Text(
+                                text = "Silence chosen — no notification or interruption sent.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Rationale: ${decision.reason}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+            }
+
+            // Minimal Intervention Log
+            Spacer(modifier = Modifier.height(20.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Intervention History (${interventions.size})",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+
+                if (interventions.isNotEmpty()) {
+                    TextButton(onClick = { minimalInterventionAgent.clearHistory() }) {
+                        Text("Clear", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (interventions.isEmpty()) {
+                Card(
+                    shape = SquircleShape(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "No intervention events logged. Tap scenario buttons above to simulate decisions.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(16.dp),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            } else {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    interventions.take(5).forEach { record ->
+                        InterventionRecordCard(record)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // ─── Reward Loop Agent Section ──────────────────────────────────────
+            Text(
+                text = "Reward Loop Agent",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
@@ -625,6 +935,92 @@ fun TriggerCard(
                 Text(text = title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(text = description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+@Composable
+fun InterventionRecordCard(record: InterventionRecord) {
+    val levelColor = when (record.output.level) {
+        0 -> Color(0xFF78909C)
+        1 -> Color(0xFF00ACC1)
+        2 -> Color(0xFFFFB300)
+        3 -> Color(0xFFE53935)
+        else -> Color.Gray
+    }
+
+    val levelTitle = when (record.output.level) {
+        0 -> "LEVEL 0: SILENCE"
+        1 -> "LEVEL 1: AWARENESS"
+        2 -> "LEVEL 2: REFLECTION"
+        3 -> "LEVEL 3: RETURN TO FOCUS"
+        else -> "LEVEL ${record.output.level}"
+    }
+
+    Card(
+        shape = SquircleShape(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    color = levelColor.copy(alpha = 0.2f),
+                    shape = SquircleShape()
+                ) {
+                    Text(
+                        text = levelTitle,
+                        color = levelColor,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+
+                Text(
+                    text = "Cooldown: ${record.output.cooldownMinutes}m",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            if (record.output.message != null) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "\"${record.output.message}\"",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            } else {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Silence preserved (No interruption)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Reason: ${record.output.reason}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+            )
+
+            if (record.response != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Outcome: ${record.response!!.name}",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
         }
     }
