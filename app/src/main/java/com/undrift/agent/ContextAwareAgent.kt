@@ -55,7 +55,8 @@ data class ContextAssessmentInput(
     val previousContextConfidence: Double? = null,
     val timeSinceLastIntervention: Long? = null,
     val configuredNudgeDelay: Long? = null,
-    val isBreakState: Boolean = false
+    val isBreakState: Boolean = false,
+    val isTyping: Boolean = false
 )
 
 data class ContextAssessmentOutput(

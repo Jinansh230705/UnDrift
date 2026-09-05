@@ -391,7 +391,8 @@ class FocusService : Service() {
                     isFocusModeActive = isFocusModeActive,
                     focusSessionPlannedDuration = if (isFocusModeActive) (focusEndTime - focusStartTime) / 60_000 else null,
                     focusSessionStartTime = if (isFocusModeActive) focusStartTime else null,
-                    timeSpentMillis = currentForegroundUsageToday
+                    timeSpentMillis = currentForegroundUsageToday,
+                    isTyping = ContextAwareAgentService.currentContext.value == com.undrift.service.UserContext.IMPORTANT_TASK
                 )
                 
                 val contextAssessment = contextAgent.assessContext(input)
@@ -511,9 +512,6 @@ class FocusService : Service() {
     private fun grantTempAccess(packageName: String, durationMinutes: Int) {
         tempAllowedApps[packageName] = System.currentTimeMillis() + (durationMinutes * 60 * 1000L)
         dismissOverlay()
-        serviceScope.launch {
-            userPreferences.deductPoints(300)
-        }
     }
 
     private fun buildOverlayView(blockedPkg: String, reason: String, userPoints: Int, dynamicMessage: String? = null): View {
@@ -529,159 +527,64 @@ class FocusService : Service() {
             packageManager.getApplicationLabel(packageManager.getApplicationInfo(blockedPkg, 0)).toString()
         } catch (_: Exception) { blockedPkg }
 
-        val focusMinutes = if (isFocusModeActive && focusStartTime > 0) {
-            ((System.currentTimeMillis() - focusStartTime) / 60_000).toInt().coerceAtLeast(1)
-        } else 0
-
         val accentColor = 0xFFCE705D.toInt()
 
-        // Root: full screen semi-transparent dark background
         val root = FrameLayout(ctx).apply {
-            setBackgroundColor(0xB3000000.toInt())
+            setBackgroundColor(0xFF000000.toInt())
         }
 
-        // Bottom sheet card
-        val sheetBg = GradientDrawable().apply {
-            setColor(0xFF1E1E1E.toInt())
-            cornerRadii = floatArrayOf(dpf(28f), dpf(28f), dpf(28f), dpf(28f), 0f, 0f, 0f, 0f)
-        }
         val sheet = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            background = sheetBg
-            setPadding(dp(28), dp(16), dp(28), dp(40))
+            setPadding(dp(32), dp(48), dp(32), dp(48))
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT
-            ).apply { gravity = Gravity.BOTTOM }
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
         }
 
-        // Handle pill
-        val handle = View(ctx).apply {
-            val bg = GradientDrawable().apply {
-                setColor(0xFF666666.toInt())
-                cornerRadius = dpf(3f)
-            }
-            background = bg
-            layoutParams = LinearLayout.LayoutParams(dp(40), dp(5)).apply {
-                gravity = Gravity.CENTER_HORIZONTAL
-                bottomMargin = dp(20)
-            }
-        }
-        sheet.addView(handle)
-
-        // "Focus Agent" title
         val title = TextView(ctx).apply {
             text = "Focus Agent"
-            setTextColor(0xFFFFFFFF.toInt())
-            textSize = 22f
+            setTextColor(accentColor)
+            textSize = 14f
+            letterSpacing = 0.1f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                gravity = Gravity.CENTER_HORIZONTAL
-                bottomMargin = dp(8)
-            }
+            ).apply { bottomMargin = dp(24) }
         }
         sheet.addView(title)
 
-        // Badge: "FOCUS MODE ACTIVE"
-        val badge = TextView(ctx).apply {
-            text = "FOCUS MODE ACTIVE"
-            setTextColor(accentColor)
-            textSize = 11f
-            letterSpacing = 0.12f
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            val bg = GradientDrawable().apply {
-                setColor(0x33CE705D)
-                cornerRadius = dpf(12f)
-            }
-            background = bg
-            setPadding(dp(14), dp(6), dp(14), dp(6))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                gravity = Gravity.CENTER_HORIZONTAL
-                bottomMargin = dp(24)
-            }
-        }
-        sheet.addView(badge)
-
-        // Main message
         val mainMsg = TextView(ctx).apply {
-            text = dynamicMessage ?: if (reason == "STRICT_BLOCK" && focusMinutes > 0) {
-                "You have been focused for $focusMinutes mins. Keep the momentum?"
-            } else if (reason == "LIMIT_EXCEEDED") {
-                "Time's up for $appName. Stay on track!"
-            } else {
-                "Stay focused. Keep the momentum?"
-            }
+            text = dynamicMessage ?: if (reason == "LIMIT_EXCEEDED") "You have reached your daily limit for $appName." else "Stay focused."
             setTextColor(0xFFFFFFFF.toInt())
-            textSize = 22f
+            textSize = 24f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
+            setLineSpacing(dpf(6f), 1f)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(12) }
+            ).apply { bottomMargin = dp(48) }
         }
         sheet.addView(mainMsg)
 
-        // Subtitle
-        val subtitle = TextView(ctx).apply {
-            text = if (reason == "STRICT_BLOCK") {
-                "I noticed you are exploring content that might break your current deep work streak."
-            } else {
-                "You have reached your daily limit for $appName. Close and stay focused on your goals."
-            }
-            setTextColor(0xFFAAAAAA.toInt())
-            textSize = 14f
-            gravity = Gravity.CENTER
-            setLineSpacing(dpf(4f), 1f)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(28) }
-        }
-        sheet.addView(subtitle)
-
-        // "Back to Focus" button (primary accent, rounded)
         val backBtn = Button(ctx).apply {
             text = "Back to Focus"
             textSize = 16f
             isAllCaps = false
             typeface = Typeface.DEFAULT_BOLD
-            setTextColor(0xFFFFFFFF.toInt())
+            setTextColor(0xFF1E1E1E.toInt())
             val bg = GradientDrawable().apply {
-                setColor(accentColor)
-                cornerRadius = dpf(16f)
+                setColor(0xFFFFFFFF.toInt())
+                cornerRadius = dpf(28f)
             }
             background = bg
-            setPadding(dp(16), dp(16), dp(16), dp(16))
+            setPadding(dp(24), dp(16), dp(24), dp(16))
             layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(56)
-            ).apply { bottomMargin = dp(12) }
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(60)
+            ).apply { bottomMargin = dp(16) }
             setOnClickListener {
-                val rewardInput = RewardEventInput(
-                    eventId = UUID.randomUUID().toString(),
-                    event = "DISTRACTION_RECOVERED"
-                )
-                serviceScope.launch {
-                    val rewardOutput = rewardAgent.evaluate(rewardInput)
-                    val pointsToAward = when(rewardOutput.magnitude) {
-                        RewardMagnitude.HIGH -> 50
-                        RewardMagnitude.MEDIUM -> 25
-                        RewardMagnitude.LOW -> 10
-                    }
-                    
-                    if (rewardOutput.type != RewardType.NONE) {
-                        userPreferences.updatePoints(pointsToAward)
-                        mainHandler.post {
-                            Toast.makeText(ctx, "Agent: +$pointsToAward points! ${rewardOutput.message ?: "Great recovery."}", Toast.LENGTH_LONG).show()
-                        }
-                    }
-                }
-                
                 lastHomeActionTime = System.currentTimeMillis()
                 dismissOverlay()
                 try {
@@ -696,65 +599,6 @@ class FocusService : Service() {
             }
         }
         sheet.addView(backBtn)
-
-        // "I need 20 min" button (light/cream, rounded)
-        val hasEnoughCoins = userPoints >= 300
-        val extraBtn = Button(ctx).apply {
-            text = if (hasEnoughCoins) "I need 20 min" else "Not enough points (need 300)"
-            textSize = 16f
-            isAllCaps = false
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(if (hasEnoughCoins) 0xFF1E1E1E.toInt() else 0xFF888888.toInt())
-            val bg = GradientDrawable().apply {
-                setColor(if (hasEnoughCoins) 0xFFE8D5C4.toInt() else 0xFF3A3A3A.toInt())
-                cornerRadius = dpf(16f)
-            }
-            background = bg
-            setPadding(dp(16), dp(16), dp(16), dp(16))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(56)
-            ).apply { bottomMargin = dp(20) }
-            setOnClickListener {
-                if (hasEnoughCoins) {
-                    grantTempAccess(blockedPkg, 20)
-                } else {
-                    Toast.makeText(ctx, "Not enough points! You need 300 points.", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-        sheet.addView(extraBtn)
-
-        // Stats line
-        val statsLine = TextView(ctx).apply {
-            text = "92% of users stay on track after this nudge"
-            setTextColor(0xFFAAAAAA.toInt())
-            textSize = 12f
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(10) }
-        }
-        sheet.addView(statsLine)
-
-        // "+15 FOCUS POINTS FOR RETURNING NOW" pill
-        val pointsBadge = TextView(ctx).apply {
-            text = "+15 FOCUS POINTS FOR RETURNING NOW"
-            setTextColor(accentColor)
-            textSize = 11f
-            letterSpacing = 0.06f
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            val bg = GradientDrawable().apply {
-                setColor(0x33CE705D)
-                cornerRadius = dpf(12f)
-            }
-            background = bg
-            setPadding(dp(14), dp(6), dp(14), dp(6))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { gravity = Gravity.CENTER_HORIZONTAL }
-        }
-        sheet.addView(pointsBadge)
 
         root.addView(sheet)
         return root

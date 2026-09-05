@@ -277,6 +277,7 @@ class MainActivity : ComponentActivity() {
                             }
                             composable("ai_chat") {
                                 AiChatScreen(
+                                    userProfile = userProfile,
                                     onBack = { navController.popBackStack() },
                                     animatedVisibilityScope = this@composable,
                                     sharedTransitionScope = this@SharedTransitionLayout

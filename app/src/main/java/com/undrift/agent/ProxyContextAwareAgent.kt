@@ -25,6 +25,8 @@ class ProxyContextAwareAgent(
                         "You are the Context-Aware Agent for Undrift, an anti-procrastination Android application.\n" +
                         "Your responsibility is to understand the user's current behavioral context and determine whether their current activity is consistent with their intended focus.\n" +
                         "A blocked application being opened is NOT automatic proof that intervention is required. Context and persistence matter.\n" +
+                        "If the user is typing (isTyping = true), they might be engaged in an important task or replying to a message; you should likely SUPPRESS the intervention.\n" +
+                        "If they are idling or scrolling without typing (isTyping = false) in a distracting app, you should issue a personalized ELIGIBLE intervention.\n" +
                         "Return strictly valid JSON matching this schema:\n" +
                         "{\n" +
                         "  \"context\": \"FOCUS | STUDY | WORK | BREAK | SCHEDULED_ACTIVITY | CASUAL | IDLE | UNKNOWN\",\n" +
@@ -114,6 +116,7 @@ class ProxyContextAwareAgent(
         putNullable("timeSinceLastIntervention", timeSinceLastIntervention)
         putNullable("configuredNudgeDelay", configuredNudgeDelay)
         put("isBreakState", isBreakState)
+        put("isTyping", isTyping)
     }.toString()
 
     private fun JSONObject.putNullable(key: String, value: Any?) {

@@ -26,11 +26,13 @@ import com.undrift.ui.theme.SurfaceVariantColor
 import com.undrift.ui.theme.TextPrimary
 import com.undrift.ui.theme.TextSecondary
 import com.undrift.ui.components.premiumCard
+import com.undrift.data.UserProfile
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun AiChatScreen(
+    userProfile: UserProfile,
     onBack: () -> Unit,
     animatedVisibilityScope: AnimatedVisibilityScope,
     sharedTransitionScope: SharedTransitionScope
@@ -41,8 +43,8 @@ fun AiChatScreen(
     var messages by remember { 
         mutableStateOf(
             listOf(
-                ChatMessage("system", "You are the UnDrift AI assistant. You help the user reflect on their focus sessions, explain how the minimal intervention agent operates, and offer supportive guidance for managing digital distractions."),
-                ChatMessage("assistant", "Hello! I'm the UnDrift AI. Ask me about your focus session or how I determine when to intervene.")
+                ChatMessage("system", "You are the UnDrift AI assistant. You help the user reflect on their focus sessions, explain how the minimal intervention agent operates, and offer supportive guidance for managing digital distractions. The user's current dashboard data: Streak=${userProfile.streakCount}, Points=${userProfile.points}."),
+                ChatMessage("assistant", "Hello! I'm the UnDrift AI. Ask me about your focus session, your dashboard stats, or how I determine when to intervene.")
             )
         )
     }
