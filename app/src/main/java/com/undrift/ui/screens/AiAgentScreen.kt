@@ -301,12 +301,15 @@ fun AiAgentScreen(
                                     actualFocusDurationMinutes = 10
                                 )
                                 val output = rewardAgent.evaluate(input)
-                                val pts = when (output.magnitude) {
-                                    RewardMagnitude.HIGH -> 30
-                                    RewardMagnitude.MEDIUM -> 20
-                                    RewardMagnitude.LOW -> 10
+                                if (output.type != RewardType.NONE) {
+                                    val pts = when (output.magnitude) {
+                                        RewardMagnitude.HIGH -> 30
+                                        RewardMagnitude.MEDIUM -> 20
+                                        RewardMagnitude.LOW -> 10
+                                    }
+                                    userPreferences.updatePoints(pts)
+                                    android.widget.Toast.makeText(context, "Agent: +$pts Coins! (${output.message ?: "10m Focus Progress"})", android.widget.Toast.LENGTH_SHORT).show()
                                 }
-                                userPreferences.updatePoints(pts)
                             }
                         },
                         modifier = Modifier.weight(1f),
@@ -325,12 +328,15 @@ fun AiAgentScreen(
                                     actualFocusDurationMinutes = 25
                                 )
                                 val output = rewardAgent.evaluate(input)
-                                val pts = when (output.magnitude) {
-                                    RewardMagnitude.HIGH -> 500
-                                    RewardMagnitude.MEDIUM -> 300
-                                    RewardMagnitude.LOW -> 100
+                                if (output.type != RewardType.NONE) {
+                                    val pts = when (output.magnitude) {
+                                        RewardMagnitude.HIGH -> 500
+                                        RewardMagnitude.MEDIUM -> 300
+                                        RewardMagnitude.LOW -> 100
+                                    }
+                                    userPreferences.updatePoints(pts)
+                                    android.widget.Toast.makeText(context, "Agent: +$pts Coins! (${output.message ?: "25m Session Completed"})", android.widget.Toast.LENGTH_SHORT).show()
                                 }
-                                userPreferences.updatePoints(pts)
                             }
                         },
                         modifier = Modifier.weight(1f),
@@ -352,12 +358,15 @@ fun AiAgentScreen(
                                     event = "DISTRACTION_RECOVERED"
                                 )
                                 val output = rewardAgent.evaluate(input)
-                                val pts = when (output.magnitude) {
-                                    RewardMagnitude.HIGH -> 50
-                                    RewardMagnitude.MEDIUM -> 25
-                                    RewardMagnitude.LOW -> 10
+                                if (output.type != RewardType.NONE) {
+                                    val pts = when (output.magnitude) {
+                                        RewardMagnitude.HIGH -> 50
+                                        RewardMagnitude.MEDIUM -> 25
+                                        RewardMagnitude.LOW -> 10
+                                    }
+                                    userPreferences.updatePoints(pts)
+                                    android.widget.Toast.makeText(context, "Agent: +$pts Coins! (${output.message ?: "Recovery rewarded"})", android.widget.Toast.LENGTH_SHORT).show()
                                 }
-                                userPreferences.updatePoints(pts)
                             }
                         },
                         modifier = Modifier.weight(1f),
@@ -372,17 +381,20 @@ fun AiAgentScreen(
                             scope.launch {
                                 val input = RewardEventInput(
                                     event = "FOCUS_SESSION_COMPLETED",
-                                    plannedDurationMinutes = 20,
-                                    actualFocusDurationMinutes = 20,
-                                    dailyFocusMinutes = 125
+                                    plannedDurationMinutes = 120,
+                                    actualFocusDurationMinutes = 120,
+                                    dailyFocusMinutes = 120
                                 )
                                 val output = rewardAgent.evaluate(input)
-                                val pts = when (output.magnitude) {
-                                    RewardMagnitude.HIGH -> 500
-                                    RewardMagnitude.MEDIUM -> 300
-                                    RewardMagnitude.LOW -> 100
+                                if (output.type != RewardType.NONE) {
+                                    val pts = when (output.magnitude) {
+                                        RewardMagnitude.HIGH -> 500
+                                        RewardMagnitude.MEDIUM -> 300
+                                        RewardMagnitude.LOW -> 100
+                                    }
+                                    userPreferences.updatePoints(pts)
+                                    android.widget.Toast.makeText(context, "Agent: +$pts Coins! (${output.message ?: "2h Milestone Reached"})", android.widget.Toast.LENGTH_SHORT).show()
                                 }
-                                userPreferences.updatePoints(pts)
                             }
                         },
                         modifier = Modifier.weight(1f),
