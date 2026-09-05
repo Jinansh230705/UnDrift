@@ -83,14 +83,13 @@ class FocusService : Service() {
             if (Build.VERSION.SDK_INT >= 34) {
                 try {
                     startForeground(1, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-                } catch (e: Exception) {
-                    Log.w(TAG, "Special use FGS start failed, falling back to standard startForeground", e)
-                    startForeground(1, notification)
+                } catch (e: Throwable) {
+                    Log.w(TAG, "Special use FGS start failed on Android 15/16", e)
                 }
             } else {
                 startForeground(1, notification)
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Failed to start foreground service", e)
         }
 
