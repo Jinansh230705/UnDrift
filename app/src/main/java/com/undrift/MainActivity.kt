@@ -265,11 +265,19 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onNavigateToAgents = { navController.navigate("ai_agent") },
                                     onNavigateToShop = { navController.navigate("rewards") },
+                                    onNavigateToAiChat = { navController.navigate("ai_chat") },
                                     onColorSelect = { color ->
                                         scope.launch {
                                             userPreferences.setThemeColor(color)
                                         }
                                     },
+                                    animatedVisibilityScope = this@composable,
+                                    sharedTransitionScope = this@SharedTransitionLayout
+                                )
+                            }
+                            composable("ai_chat") {
+                                AiChatScreen(
+                                    onBack = { navController.popBackStack() },
                                     animatedVisibilityScope = this@composable,
                                     sharedTransitionScope = this@SharedTransitionLayout
                                 )

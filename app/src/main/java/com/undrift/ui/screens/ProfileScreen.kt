@@ -50,6 +50,7 @@ fun ProfileScreen(
     onLogout: () -> Unit,
     onNavigateToAgents: () -> Unit,
     onNavigateToShop: () -> Unit,
+    onNavigateToAiChat: () -> Unit,
     onColorSelect: (Long) -> Unit,
     animatedVisibilityScope: AnimatedVisibilityScope,
     sharedTransitionScope: SharedTransitionScope
@@ -228,6 +229,13 @@ fun ProfileScreen(
                 style = MaterialTheme.typography.labelMedium,
                 color = TextSecondary,
                 modifier = Modifier.padding(bottom = 16.dp)
+            )
+
+            PreferenceItem(
+                icon = PhosphorIcons.Bold.ChatCircleDots,
+                title = "AI Agent Chat",
+                subtitle = "Reflect on your focus sessions",
+                onClick = onNavigateToAiChat
             )
 
             PreferenceItem(

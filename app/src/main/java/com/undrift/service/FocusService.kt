@@ -37,12 +37,25 @@ class FocusService : Service() {
     private val rewardAgent: RewardLoopAgent by lazy {
         ProxyRewardLoopAgent(ProxyAiClient(), LocalRewardLoopAgent.instance)
     }
+    private val contextAgent: ContextAwareAgent by lazy {
+        ProxyContextAwareAgent(ProxyAiClient(), LocalContextAwareAgent.instance)
+    }
+    private val interventionAgent: MinimalInterventionAgent by lazy {
+        ProxyMinimalInterventionAgent(ProxyAiClient(), LocalMinimalInterventionAgent.instance)
+    }
+    
+    // Agent Polling State Tracking
+    private var lastAgentCallTime = 0L
+    private var lastAgentPackage: String? = null
+    private var nextAgentPollTime = 0L
+    private var lastInterventionMessage: String? = null
+    private var lastInterventionLevel: InterventionLevel? = null
     
     private var isFocusModeActive = false
     private var focusEndTime = 0L
     private var focusStartTime = 0L
     private var monitoringJob: Job? = null
-    
+
     @Volatile
     private var currentUserProfile: UserProfile? = null
     @Volatile
@@ -345,39 +358,75 @@ class FocusService : Service() {
         }
 
         val profile = currentUserProfile ?: return
-
-        // 0. AI Context Check - Bypass if doing something important
-        val currentContext = ContextAwareAgentService.currentContext.value
-        if (currentContext == UserContext.IMPORTANT_TASK) {
-            Log.d(TAG, "AI Agent: User is performing an important task in $foregroundPkg. Bypassing block.")
-            return
-        }
-
-        // 1. Focus Mode strict block
-        if (isFocusModeActive && profile.blockedApps.contains(foregroundPkg)) {
-            showOverlay(foregroundPkg, "STRICT_BLOCK", profile.points)
-            return
-        }
-
-        // 2. App time limit exceeded
-        val limit = profile.appLimits[foregroundPkg]
-        if (limit != null && limit > 0) {
+        val isBlocked = profile.blockedApps.contains(foregroundPkg)
+        
+        val limit = profile.appLimits[foregroundPkg] ?: 0L
+        if (limit > 0) {
             if (foregroundPkg != currentForegroundPkg) {
-                currentForegroundPkg = foregroundPkg
                 currentForegroundUsageToday = UsageStatsHelper.getAppUsageToday(this, foregroundPkg)
             } else {
                 currentForegroundUsageToday += 1000L // Add 1 second for each polling interval
             }
-
-            Log.d(TAG, "Usage check: $foregroundPkg used ${currentForegroundUsageToday/1000}s, limit ${limit/1000}s")
-
-            if (currentForegroundUsageToday >= limit) {
-                showOverlay(foregroundPkg, "LIMIT_EXCEEDED", profile.points)
-                return
-            } else if (limit - currentForegroundUsageToday <= 60_000) {
+            if (limit - currentForegroundUsageToday in 1..60_000) {
                 showWarningNotification(foregroundPkg, (limit - currentForegroundUsageToday) / 1000)
             }
+        }
+        val isLimitExceeded = limit > 0 && currentForegroundUsageToday >= limit
+
+        // Only engage agents if the app is a potential distraction (blocked or limit exceeded)
+        if ((isFocusModeActive && isBlocked) || isLimitExceeded) {
+            val now = System.currentTimeMillis()
+            
+            // Should we poll the agent?
+            // If the package changed, or the poll timer expired.
+            val shouldPollAgent = foregroundPkg != lastAgentPackage || now >= nextAgentPollTime
+            
+            if (shouldPollAgent) {
+                lastAgentPackage = foregroundPkg
+                lastAgentCallTime = now
+                
+                val input = ContextAssessmentInput(
+                    packageName = foregroundPkg,
+                    isBlocked = isBlocked,
+                    isFocusModeActive = isFocusModeActive,
+                    focusSessionPlannedDuration = if (isFocusModeActive) (focusEndTime - focusStartTime) / 60_000 else null,
+                    focusSessionStartTime = if (isFocusModeActive) focusStartTime else null,
+                    timeSpentMillis = currentForegroundUsageToday
+                )
+                
+                val contextAssessment = contextAgent.assessContext(input)
+                
+                val interventionInput = InterventionDecisionInput(
+                    packageName = foregroundPkg,
+                    contextAssessment = contextAssessment,
+                    isFocusModeActive = isFocusModeActive,
+                    timeSpentMillis = currentForegroundUsageToday,
+                    timeLimitMillis = if (limit > 0) limit else null
+                )
+                val interventionDecision = interventionAgent.decideIntervention(interventionInput)
+                
+                lastInterventionLevel = interventionDecision.level
+                lastInterventionMessage = interventionDecision.reason
+                
+                // Throttle next poll based on AI decision
+                if (contextAssessment.intervention.state == InterventionState.WAITING) {
+                    val waitMs = (contextAssessment.intervention.remainingSeconds * 1000).coerceIn(5000, 30000)
+                    nextAgentPollTime = now + waitMs
+                } else {
+                    nextAgentPollTime = now + 10000 // default throttle 10s if not waiting
+                }
+            }
+            
+            // Apply the last known intervention decision for this package
+            if (foregroundPkg == lastAgentPackage) {
+                if (lastInterventionLevel == InterventionLevel.STRICT_OVERLAY || lastInterventionLevel == InterventionLevel.SOFT_NUDGE) {
+                    val reason = if (isLimitExceeded) "LIMIT_EXCEEDED" else "STRICT_BLOCK"
+                    val message = lastInterventionMessage ?: "Stay focused. Keep the momentum?"
+                    showOverlay(foregroundPkg, reason, profile.points, message)
+                }
+            }
         } else {
+            // Not blocked, not limit exceeded
             currentForegroundPkg = foregroundPkg
         }
     }
@@ -402,7 +451,7 @@ class FocusService : Service() {
 
     // ─── WindowManager overlay (the actual blocking UI) ──────────────────
 
-    private fun showOverlay(blockedPkg: String, reason: String, userPoints: Int = 0) {
+    private fun showOverlay(blockedPkg: String, reason: String, userPoints: Int = 0, dynamicMessage: String? = null) {
         if (!Settings.canDrawOverlays(this)) {
             Log.e(TAG, "No SYSTEM_ALERT_WINDOW permission – falling back to notification")
             showFallbackNotification(blockedPkg, reason)
@@ -427,7 +476,7 @@ class FocusService : Service() {
                 )
                 params.gravity = Gravity.CENTER
 
-                val view = buildOverlayView(blockedPkg, reason, userPoints)
+                val view = buildOverlayView(blockedPkg, reason, userPoints, dynamicMessage)
                 wm.addView(view, params)
                 overlayView = view
                 overlayBlockedPackage = blockedPkg
@@ -467,7 +516,7 @@ class FocusService : Service() {
         }
     }
 
-    private fun buildOverlayView(blockedPkg: String, reason: String, userPoints: Int): View {
+    private fun buildOverlayView(blockedPkg: String, reason: String, userPoints: Int, dynamicMessage: String? = null): View {
         val ctx = this
         val dp = { value: Int ->
             TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), ctx.resources.displayMetrics).toInt()
@@ -562,7 +611,7 @@ class FocusService : Service() {
 
         // Main message
         val mainMsg = TextView(ctx).apply {
-            text = if (reason == "STRICT_BLOCK" && focusMinutes > 0) {
+            text = dynamicMessage ?: if (reason == "STRICT_BLOCK" && focusMinutes > 0) {
                 "You have been focused for $focusMinutes mins. Keep the momentum?"
             } else if (reason == "LIMIT_EXCEEDED") {
                 "Time's up for $appName. Stay on track!"
