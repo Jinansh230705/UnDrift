@@ -35,7 +35,7 @@ class FocusService : Service() {
     private lateinit var userPreferences: UserPreferences
     private val mongoRepository = MongoRepository()
     private val rewardAgent: RewardLoopAgent by lazy {
-        ProxyRewardLoopAgent(ProxyAiClient(), LocalRewardLoopAgent())
+        ProxyRewardLoopAgent(ProxyAiClient(), LocalRewardLoopAgent.instance)
     }
     
     private var isFocusModeActive = false
@@ -202,12 +202,38 @@ class FocusService : Service() {
             Log.e(TAG, "Failed to update foreground service state", e)
         }
         
+        var lastUsageRewardTime = System.currentTimeMillis()
         monitoringJob?.cancel()
         monitoringJob = serviceScope.launch {
             while (isFocusModeActive) {
-                if (System.currentTimeMillis() >= focusEndTime) {
+                val now = System.currentTimeMillis()
+                if (now >= focusEndTime) {
                     completeFocusSession()
                     break
+                }
+                
+                // Track focus usage: Every 5 minutes (300_000 ms), award small focus usage coins
+                if (now - lastUsageRewardTime >= 300_000L) {
+                    lastUsageRewardTime = now
+                    val focusMinutesAccrued = ((now - focusStartTime) / 60_000L).toInt()
+                    val rewardInput = RewardEventInput(
+                        eventId = UUID.randomUUID().toString(),
+                        event = "FOCUS_USAGE_PROGRESS",
+                        actualFocusDurationMinutes = focusMinutesAccrued
+                    )
+                    val rewardOutput = rewardAgent.evaluate(rewardInput)
+                    if (rewardOutput.type != RewardType.NONE) {
+                        val smallCoins = when (rewardOutput.magnitude) {
+                            RewardMagnitude.HIGH -> 30
+                            RewardMagnitude.MEDIUM -> 20
+                            RewardMagnitude.LOW -> 10
+                        }
+                        userPreferences.updatePoints(smallCoins)
+                        currentUserProfile?.let { prof ->
+                            mongoRepository.updateUserStats(prof.email, prof.points + smallCoins, prof.streakCount, prof.streakHistory)
+                        }
+                        showRewardNotification(smallCoins, rewardOutput.message ?: "Earned coins for focus usage!")
+                    }
                 }
                 delay(2000)
             }
@@ -281,6 +307,7 @@ class FocusService : Service() {
             userPreferences.updatePoints(pointsToAward)
             val newPoints = profile.points + pointsToAward
             mongoRepository.updateUserStats(profile.email, newPoints, newStreak, profile.streakHistory)
+            showRewardNotification(pointsToAward, rewardOutput.message ?: "Agent rewarded you for your focus session!")
         } else {
             mongoRepository.updateUserStats(profile.email, profile.points, newStreak, profile.streakHistory)
         }
@@ -590,8 +617,12 @@ class FocusService : Service() {
                         RewardMagnitude.MEDIUM -> 25
                         RewardMagnitude.LOW -> 10
                     }
+                    
                     if (rewardOutput.type != RewardType.NONE) {
                         userPreferences.updatePoints(pointsToAward)
+                        mainHandler.post {
+                            Toast.makeText(ctx, "Agent: +$pointsToAward points! ${rewardOutput.message ?: "Great recovery."}", Toast.LENGTH_LONG).show()
+                        }
                     }
                 }
                 
@@ -775,6 +806,27 @@ class FocusService : Service() {
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(monitorChannel)
             manager.createNotificationChannel(alertChannel)
+        }
+    }
+
+    private fun showRewardNotification(points: Int, message: String) {
+        try {
+            val notification = NotificationCompat.Builder(this, "focus_channel")
+                .setSmallIcon(android.R.drawable.btn_star)
+                .setContentTitle("Focus Agent Reward: +$points Points!")
+                .setContentText(message)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .build()
+
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.notify(System.currentTimeMillis().toInt(), notification)
+            
+            mainHandler.post {
+                Toast.makeText(this, "Agent: +$points points! $message", Toast.LENGTH_LONG).show()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to show reward notification", e)
         }
     }
 
