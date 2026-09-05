@@ -16,8 +16,8 @@ android {
         applicationId = "com.undrift"
         minSdk = 24
         targetSdk = 35
-        versionCode = 21
-        versionName = "1.0.21-stable"
+        versionCode = 22
+        versionName = "1.0.22-stable"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
