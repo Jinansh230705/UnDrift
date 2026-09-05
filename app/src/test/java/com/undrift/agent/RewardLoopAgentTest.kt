@@ -155,4 +155,17 @@ class RewardLoopAgentTest {
         agent.clearEvaluations()
         assertEquals(0, agent.getRecentEvaluations().size)
     }
+
+    @Test
+    fun testFocusUsageProgressReward() {
+        val input = RewardEventInput(
+            eventId = UUID.randomUUID().toString(),
+            event = "FOCUS_USAGE_PROGRESS",
+            actualFocusDurationMinutes = 10
+        )
+        val result = agent.evaluate(input)
+        assertEquals(RewardType.PROGRESS, result.type)
+        assertEquals(RewardMagnitude.LOW, result.magnitude)
+        assertEquals("Earned focus coins for 10m spent in focus mode!", result.message)
+    }
 }

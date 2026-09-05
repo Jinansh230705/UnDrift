@@ -5,21 +5,23 @@ import com.undrift.network.ChatMessage
 import com.undrift.network.ProxyAiClient
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
-import java.util.Collections
 
 /**
- * Uses the proxy for agent-generated reward messaging while keeping reward
- * decisions safe and available offline through [fallback].
+ * Uses [ProxyAiClient] for AI-generated reward evaluations via Cloudflare AI Proxy,
+ * while keeping reward decisions safe and available offline through [fallback].
+ * All evaluations are logged to [RewardRepository] for UI state reactivity.
  */
 class ProxyRewardLoopAgent(
-    private val client: ProxyAiClient,
-    private val fallback: LocalRewardLoopAgent = LocalRewardLoopAgent()
+    private val client: ProxyAiClient = ProxyAiClient(),
+    private val fallback: LocalRewardLoopAgent = LocalRewardLoopAgent.instance,
+    private val repository: RewardRepository = RewardRepository.instance
 ) : RewardLoopAgent {
-    private val processedEventIds = Collections.synchronizedSet(mutableSetOf<String>())
+
     override fun evaluate(input: RewardEventInput): RewardOutput = runBlocking {
-        if (!processedEventIds.add(input.eventId)) {
+        if (repository.isDuplicate(input.eventId)) {
             return@runBlocking RewardOutput(RewardType.NONE, RewardMagnitude.LOW, null)
         }
+        repository.markProcessed(input.eventId)
 
         try {
             val response = client.chatCompletion(
@@ -27,19 +29,34 @@ class ProxyRewardLoopAgent(
                     ChatMessage(
                         "system",
                         "You are UnDrift's reward agent. Return only valid JSON with exactly " +
-                            "type (NONE, SESSION_COMPLETION, PROGRESS, RECOVERY, MILESTONE, " +
-                            "CONSISTENCY), magnitude (LOW, MEDIUM, HIGH), and message (string or null). " +
-                            "Never invent points or reward types."
+                                "type (NONE, SESSION_COMPLETION, PROGRESS, RECOVERY, MILESTONE, " +
+                                "CONSISTENCY), magnitude (LOW, MEDIUM, HIGH), and message (string or null). " +
+                                "Never invent points or reward types."
                     ),
                     ChatMessage("user", input.toPrompt())
                 ),
                 temperature = 0.2
             )
-            parseOutput(response) ?: fallback.evaluate(input)
+            val parsedOutput = parseOutput(response)
+            if (parsedOutput != null) {
+                val record = RewardEvaluationRecord(input = input, output = parsedOutput)
+                repository.addRecord(record)
+                parsedOutput
+            } else {
+                fallback.evaluate(input)
+            }
         } catch (error: Exception) {
-            Log.w(TAG, "Proxy reward evaluation failed; using local rules", error)
+            runCatching { Log.w(TAG, "Proxy reward evaluation failed; using local rules", error) }
             fallback.evaluate(input)
         }
+    }
+
+    override fun getRecentEvaluations(): List<RewardEvaluationRecord> {
+        return repository.getRecentRecords()
+    }
+
+    override fun clearEvaluations() {
+        repository.clear()
     }
 
     private fun parseOutput(raw: String): RewardOutput? {

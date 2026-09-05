@@ -15,6 +15,18 @@ class RewardEvaluator {
             )
         }
 
+        if (input.event == "FOCUS_TIME_ACCRUED" || input.event == "FOCUS_USAGE_PROGRESS") {
+            val minutes = input.actualFocusDurationMinutes ?: 0
+            if (minutes >= 5) {
+                return RewardOutput(
+                    type = RewardType.PROGRESS,
+                    magnitude = RewardMagnitude.LOW,
+                    message = "Earned focus coins for ${minutes}m spent in focus mode!"
+                )
+            }
+            return RewardOutput(RewardType.NONE, RewardMagnitude.LOW, null)
+        }
+
         if (input.event == "FOCUS_SESSION_COMPLETED") {
             val planned = input.plannedDurationMinutes ?: 0
             val actual = input.actualFocusDurationMinutes ?: 0
