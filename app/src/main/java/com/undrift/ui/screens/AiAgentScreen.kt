@@ -262,8 +262,16 @@ fun AiAgentScreen(
                                     val serviceIntent = Intent(context, FocusService::class.java).apply {
                                         action = "START_MONITORING"
                                     }
-                                    androidx.core.content.ContextCompat.startForegroundService(context, serviceIntent)
-                                } catch (e: Exception) {
+                                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                        try {
+                                            androidx.core.content.ContextCompat.startForegroundService(context, serviceIntent)
+                                        } catch (e: Throwable) {
+                                            context.startService(serviceIntent)
+                                        }
+                                    } else {
+                                        context.startService(serviceIntent)
+                                    }
+                                } catch (e: Throwable) {
                                     android.util.Log.e("AiAgentScreen", "Failed to start monitoring service", e)
                                 }
                             } else {
@@ -614,12 +622,15 @@ fun AiAgentScreen(
                                     actualFocusDurationMinutes = 10
                                 )
                                 val output = rewardAgent.evaluate(input)
-                                val pts = when (output.magnitude) {
-                                    RewardMagnitude.HIGH -> 30
-                                    RewardMagnitude.MEDIUM -> 20
-                                    RewardMagnitude.LOW -> 10
+                                if (output.type != RewardType.NONE) {
+                                    val pts = when (output.magnitude) {
+                                        RewardMagnitude.HIGH -> 30
+                                        RewardMagnitude.MEDIUM -> 20
+                                        RewardMagnitude.LOW -> 10
+                                    }
+                                    userPreferences.updatePoints(pts)
+                                    android.widget.Toast.makeText(context, "Agent: +$pts Coins! (${output.message ?: "10m Focus Progress"})", android.widget.Toast.LENGTH_SHORT).show()
                                 }
-                                userPreferences.updatePoints(pts)
                             }
                         },
                         modifier = Modifier.weight(1f),
@@ -638,12 +649,15 @@ fun AiAgentScreen(
                                     actualFocusDurationMinutes = 25
                                 )
                                 val output = rewardAgent.evaluate(input)
-                                val pts = when (output.magnitude) {
-                                    RewardMagnitude.HIGH -> 500
-                                    RewardMagnitude.MEDIUM -> 300
-                                    RewardMagnitude.LOW -> 100
+                                if (output.type != RewardType.NONE) {
+                                    val pts = when (output.magnitude) {
+                                        RewardMagnitude.HIGH -> 500
+                                        RewardMagnitude.MEDIUM -> 300
+                                        RewardMagnitude.LOW -> 100
+                                    }
+                                    userPreferences.updatePoints(pts)
+                                    android.widget.Toast.makeText(context, "Agent: +$pts Coins! (${output.message ?: "25m Session Completed"})", android.widget.Toast.LENGTH_SHORT).show()
                                 }
-                                userPreferences.updatePoints(pts)
                             }
                         },
                         modifier = Modifier.weight(1f),
@@ -665,12 +679,15 @@ fun AiAgentScreen(
                                     event = "DISTRACTION_RECOVERED"
                                 )
                                 val output = rewardAgent.evaluate(input)
-                                val pts = when (output.magnitude) {
-                                    RewardMagnitude.HIGH -> 50
-                                    RewardMagnitude.MEDIUM -> 25
-                                    RewardMagnitude.LOW -> 10
+                                if (output.type != RewardType.NONE) {
+                                    val pts = when (output.magnitude) {
+                                        RewardMagnitude.HIGH -> 50
+                                        RewardMagnitude.MEDIUM -> 25
+                                        RewardMagnitude.LOW -> 10
+                                    }
+                                    userPreferences.updatePoints(pts)
+                                    android.widget.Toast.makeText(context, "Agent: +$pts Coins! (${output.message ?: "Recovery rewarded"})", android.widget.Toast.LENGTH_SHORT).show()
                                 }
-                                userPreferences.updatePoints(pts)
                             }
                         },
                         modifier = Modifier.weight(1f),
@@ -685,17 +702,20 @@ fun AiAgentScreen(
                             scope.launch {
                                 val input = RewardEventInput(
                                     event = "FOCUS_SESSION_COMPLETED",
-                                    plannedDurationMinutes = 20,
-                                    actualFocusDurationMinutes = 20,
-                                    dailyFocusMinutes = 125
+                                    plannedDurationMinutes = 120,
+                                    actualFocusDurationMinutes = 120,
+                                    dailyFocusMinutes = 120
                                 )
                                 val output = rewardAgent.evaluate(input)
-                                val pts = when (output.magnitude) {
-                                    RewardMagnitude.HIGH -> 500
-                                    RewardMagnitude.MEDIUM -> 300
-                                    RewardMagnitude.LOW -> 100
+                                if (output.type != RewardType.NONE) {
+                                    val pts = when (output.magnitude) {
+                                        RewardMagnitude.HIGH -> 500
+                                        RewardMagnitude.MEDIUM -> 300
+                                        RewardMagnitude.LOW -> 100
+                                    }
+                                    userPreferences.updatePoints(pts)
+                                    android.widget.Toast.makeText(context, "Agent: +$pts Coins! (${output.message ?: "2h Milestone Reached"})", android.widget.Toast.LENGTH_SHORT).show()
                                 }
-                                userPreferences.updatePoints(pts)
                             }
                         },
                         modifier = Modifier.weight(1f),
@@ -794,53 +814,57 @@ fun AiAgentScreen(
             Spacer(modifier = Modifier.height(32.dp))
             
             Text(
-                text = "Context AI Settings",
+                text = "AI Network Infrastructure",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
             )
             Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "Connect an external LLM endpoint to analyze on-screen context and intelligently filter distractions.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // API URL Input
-            OutlinedTextField(
-                value = apiUrl,
-                onValueChange = { apiUrl = it },
-                label = { Text("API URL Endpoint") },
-                placeholder = { Text("https://api.openai.com/v1/chat/completions") },
-                modifier = Modifier.fillMaxWidth(),
-                leadingIcon = { Icon(PhosphorIcons.Bold.Link, contentDescription = null) },
+            
+            Card(
                 shape = SquircleShape(),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-                )
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // API Key Input
-            OutlinedTextField(
-                value = apiKey,
-                onValueChange = { apiKey = it },
-                label = { Text("API Key") },
-                placeholder = { Text("sk-...") },
-                modifier = Modifier.fillMaxWidth(),
-                leadingIcon = { Icon(PhosphorIcons.Bold.Key, contentDescription = null) },
-                shape = SquircleShape(),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-                )
-            )
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(PhosphorIcons.Bold.CloudCheck, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = "Cloudflare AI Proxy", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                            Text(text = "https://undriftapis.jinansh.workers.dev", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Surface(
+                            color = Color(0xFF4CAF50).copy(alpha = 0.2f),
+                            shape = CircleShape
+                        ) {
+                            Text(
+                                text = "Active",
+                                color = Color(0xFF4CAF50),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Your AI Reward & Context Agents are automatically connected to the high-performance AI Proxy. No manual API keys or endpoints are required.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
 
             Spacer(modifier = Modifier.height(100.dp))
         }

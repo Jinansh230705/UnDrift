@@ -2,6 +2,7 @@ package com.undrift.ui.screens
 
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.provider.Settings
 import android.accessibilityservice.AccessibilityService
 import androidx.compose.animation.AnimatedVisibilityScope
@@ -231,10 +232,18 @@ fun DashboardScreen(
                                     action = if (active) "START_FOCUS" else "STOP_FOCUS"
                                     if (active) putExtra("DURATION", userProfile.focusDurationMinutes)
                                 }
-                                if (active) {
-                                    ContextCompat.startForegroundService(context, intent)
-                                } else {
-                                    context.startService(intent)
+                                try {
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                        try {
+                                            ContextCompat.startForegroundService(context, intent)
+                                        } catch (e: Throwable) {
+                                            context.startService(intent)
+                                        }
+                                    } else {
+                                        context.startService(intent)
+                                    }
+                                } catch (e: Throwable) {
+                                    android.util.Log.e("DashboardScreen", "Failed to start focus service", e)
                                 }
                             },
                             colors = SwitchDefaults.colors(

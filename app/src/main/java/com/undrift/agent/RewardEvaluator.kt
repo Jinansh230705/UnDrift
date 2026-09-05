@@ -18,9 +18,14 @@ class RewardEvaluator {
         if (input.event == "FOCUS_TIME_ACCRUED" || input.event == "FOCUS_USAGE_PROGRESS") {
             val minutes = input.actualFocusDurationMinutes ?: 0
             if (minutes >= 5) {
+                val magnitude = when {
+                    minutes >= 60 -> RewardMagnitude.HIGH
+                    minutes >= 20 -> RewardMagnitude.MEDIUM
+                    else -> RewardMagnitude.LOW
+                }
                 return RewardOutput(
                     type = RewardType.PROGRESS,
-                    magnitude = RewardMagnitude.LOW,
+                    magnitude = magnitude,
                     message = "Earned focus coins for ${minutes}m spent in focus mode!"
                 )
             }
@@ -31,8 +36,8 @@ class RewardEvaluator {
             val planned = input.plannedDurationMinutes ?: 0
             val actual = input.actualFocusDurationMinutes ?: 0
 
-            // Milestones (e.g., reaching 120 minutes of focus in a day)
-            if (input.dailyFocusMinutes >= 120 && input.previousRewardType != RewardType.MILESTONE) {
+            // 1. Milestones (e.g. reaching 120 minutes of focus in a day or planned 2h session)
+            if ((input.dailyFocusMinutes >= 120 || planned >= 120 || actual >= 120) && input.previousRewardType != RewardType.MILESTONE) {
                 return RewardOutput(
                     type = RewardType.MILESTONE,
                     magnitude = RewardMagnitude.HIGH,
@@ -40,7 +45,7 @@ class RewardEvaluator {
                 )
             }
 
-            // Consistency (e.g., building a streak)
+            // 2. Consistency (e.g. building a streak)
             if (input.currentStreak > 0 && input.currentStreak > input.previousStreak && input.currentStreak % 3 == 0) {
                 return RewardOutput(
                     type = RewardType.CONSISTENCY,
@@ -49,17 +54,22 @@ class RewardEvaluator {
                 )
             }
 
-            // Full completion
+            // 3. Full session completion (e.g. 10m, 25m, 60m, 120m sessions)
             if (actual >= planned && planned > 0) {
+                val magnitude = when {
+                    planned >= 60 -> RewardMagnitude.HIGH
+                    planned >= 20 -> RewardMagnitude.MEDIUM
+                    else -> RewardMagnitude.LOW
+                }
                 return RewardOutput(
                     type = RewardType.SESSION_COMPLETION,
-                    magnitude = RewardMagnitude.MEDIUM,
+                    magnitude = magnitude,
                     message = "Focus session complete."
                 )
             }
 
-            // Partial completion but meaningful progress (e.g., at least 5 minutes)
-            if (actual in 5 until planned) {
+            // 4. Partial completion but meaningful progress (e.g. at least 5 minutes)
+            if (actual >= 5) {
                 return RewardOutput(
                     type = RewardType.PROGRESS,
                     magnitude = RewardMagnitude.LOW,
