@@ -119,7 +119,15 @@ fun AiChatScreen(
                                     val response = aiClient.chatCompletion(messages)
                                     messages = messages + ChatMessage("assistant", response)
                                 } catch (e: Exception) {
-                                    messages = messages + ChatMessage("assistant", "Sorry, I encountered an error communicating with the server.")
+                                    val err = e.message ?: e.toString()
+                                    val regex = Regex("Please retry in [0-9.]+s")
+                                    val match = regex.find(err)
+                                    val displayMsg = if (match != null) {
+                                        "You have exceeded your API quota. ${match.value}."
+                                    } else {
+                                        "Sorry, I encountered an error: $err"
+                                    }
+                                    messages = messages + ChatMessage("assistant", displayMsg)
                                 } finally {
                                     isTyping = false
                                 }

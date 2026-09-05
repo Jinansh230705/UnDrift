@@ -50,7 +50,8 @@ open class ProxyAiClient(
         httpClient.newCall(requestBuilder.build()).execute().use { response ->
             val body = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
-                throw ProxyAiException("Proxy request failed (${response.code})")
+                val err = body
+                throw ProxyAiException("Proxy request failed (${response.code}): $err")
             }
             parseContent(body)
                 ?: throw ProxyAiException("Proxy response did not contain assistant content")
