@@ -572,7 +572,7 @@ class FocusService : Service() {
                 Log.d(TAG, "Overlay shown for $blockedPkg ($reason)")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to show overlay: ${e.message}")
-                showFallbackNotification(blockedPkg, reason)
+                showFallbackNotification(blockedPkg, reason, dynamicMessage)
             }
         }
     }
@@ -648,7 +648,7 @@ class FocusService : Service() {
         sheet.addView(title)
 
         val mainMsg = TextView(ctx).apply {
-            text = dynamicMessage ?: if (reason == "LIMIT_EXCEEDED") "You have reached your daily limit for $appName." else "Stay focused."
+            text = dynamicMessage?.takeIf { it.isNotBlank() } ?: if (reason == "LIMIT_EXCEEDED") "You have reached your daily limit for $appName." else "Stay focused."
             setTextColor(0xFFFFFFFF.toInt())
             textSize = 24f
             typeface = Typeface.DEFAULT_BOLD

@@ -105,7 +105,7 @@ class LocalContextAwareAgent : ContextAwareAgent {
         // Rule 2: Doom scrolling in restricted / focus context => ELIGIBLE
         if (input.isDoomScrolling && (input.isBlocked || input.isFocusModeActive)) {
             return ContextAssessmentOutput(
-                context = UserContext.CASUAL,
+                context = if (input.isFocusModeActive) UserContext.FOCUS else UserContext.WORK,
                 contextConfidence = 0.95,
                 currentActivity = input.packageName,
                 activityCompatibility = ActivityCompatibility.INCONSISTENT,

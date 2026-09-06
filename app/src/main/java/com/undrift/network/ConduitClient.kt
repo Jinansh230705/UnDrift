@@ -131,7 +131,7 @@ open class ConduitClient(
 
     open suspend fun chatCompletion(
         messages: List<ChatMessage>,
-        model: String? = null,
+        model: String? = "gemini-3.6-flash",
         temperature: Double = 0.7,
         maxTokens: Int? = null,
     ): String {
@@ -170,7 +170,7 @@ open class ConduitClient(
 
     open fun chatCompletionStream(
         messages: List<ChatMessage>,
-        model: String? = null,
+        model: String? = "gemini-3.6-flash",
         temperature: Double = 0.7,
         maxTokens: Int? = null,
     ): Flow<String> = flow {

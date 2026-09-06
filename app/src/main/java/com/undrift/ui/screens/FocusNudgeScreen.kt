@@ -148,10 +148,12 @@ fun FocusNudgeScreen(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
+                val displayMessage = message?.takeIf { it.isNotBlank() } ?: if (reason == "LIMIT_EXCEEDED") 
+                    "You've reached your daily limit for $appName. Stay focused on your goals instead."
+                    else "This app is currently blocked because you're in Deep Work mode."
+
                 Text(
-                    text = message ?: if (reason == "LIMIT_EXCEEDED") 
-                        "You've reached your daily limit for $appName. Stay focused on your goals instead."
-                        else "This app is currently blocked because you're in Deep Work mode.",
+                    text = displayMessage,
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondary,
                     textAlign = TextAlign.Center,

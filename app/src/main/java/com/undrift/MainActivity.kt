@@ -311,11 +311,16 @@ class MainActivity : ComponentActivity() {
                             ) { backStackEntry ->
                                 val pkg = backStackEntry.arguments?.getString("package")
                                 val reason = backStackEntry.arguments?.getString("reason")
-                                val message = backStackEntry.arguments?.getString("message")
+                                val rawMsg = backStackEntry.arguments?.getString("message")
+                                val decodedMsg = try {
+                                    rawMsg?.takeIf { it.isNotBlank() }?.let { java.net.URLDecoder.decode(it, "UTF-8") }
+                                } catch (_: Exception) {
+                                    rawMsg
+                                }
                                 FocusNudgeScreen(
                                     packageName = pkg,
                                     reason = reason,
-                                    message = message,
+                                    message = decodedMsg,
                                     onBackToFocus = { 
                                         FocusService.instance?.rewardDistractionRecovery()
                                         val startMain = Intent(Intent.ACTION_MAIN).apply {
