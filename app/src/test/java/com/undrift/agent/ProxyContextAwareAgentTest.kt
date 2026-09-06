@@ -1,7 +1,7 @@
 package com.undrift.agent
 
 import com.undrift.network.ChatMessage
-import com.undrift.network.ProxyAiClient
+import com.undrift.network.ConduitClient
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import org.junit.Assert.assertEquals
@@ -9,13 +9,13 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class FakeProxyAiClient(private val mockResponse: String? = null, private val shouldThrow: Boolean = false) : ProxyAiClient() {
-    override suspend fun chatCompletion(messages: List<ChatMessage>, model: String?, temperature: Double?): String {
+class FakeConduitClient(private val mockResponse: String? = null, private val shouldThrow: Boolean = false) : ConduitClient() {
+    override suspend fun chatCompletion(messages: List<ChatMessage>, model: String?, temperature: Double, maxTokens: Int?): String {
         if (shouldThrow) throw Exception("Network error")
         return mockResponse ?: "{}"
     }
 
-    override fun chatCompletionStream(messages: List<ChatMessage>, model: String?, temperature: Double?): Flow<String> {
+    override fun chatCompletionStream(messages: List<ChatMessage>, model: String?, temperature: Double, maxTokens: Int?): Flow<String> {
         return emptyFlow()
     }
 }
@@ -24,7 +24,7 @@ class ProxyContextAwareAgentTest {
 
     private fun createAgent(mockJson: String? = null, shouldThrow: Boolean = false): ProxyContextAwareAgent {
         return ProxyContextAwareAgent(
-            client = FakeProxyAiClient(mockJson, shouldThrow),
+            client = FakeConduitClient(mockJson, shouldThrow),
             fallback = LocalContextAwareAgent()
         )
     }

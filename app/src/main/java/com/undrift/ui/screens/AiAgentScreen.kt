@@ -26,7 +26,7 @@ import com.adamglin.phosphoricons.regular.*
 import com.undrift.agent.*
 import com.undrift.data.UserPreferences
 import com.undrift.data.UserProfile
-import com.undrift.network.ProxyAiClient
+import com.undrift.network.ConduitClient
 import com.undrift.service.FocusService
 import com.undrift.ui.components.SquircleShape
 import kotlinx.coroutines.launch
@@ -50,7 +50,7 @@ fun AiAgentScreen(
     var hasUnsavedChanges by remember { mutableStateOf(false) }
 
     val rewardAgent: RewardLoopAgent = remember {
-        ProxyRewardLoopAgent(ProxyAiClient(), LocalRewardLoopAgent.instance)
+        ProxyRewardLoopAgent(ConduitClient(), LocalRewardLoopAgent.instance)
     }
 
     LaunchedEffect(apiUrl, apiKey) {

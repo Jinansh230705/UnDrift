@@ -25,7 +25,7 @@ class ContextAwareAgentTest {
         // Ensure local fallback fails closed and safe
         assertEquals(UserContext.UNKNOWN, result.context)
         assertEquals(ActivityCompatibility.UNKNOWN, result.activityCompatibility)
-        assertEquals(InterventionState.NOT_ELIGIBLE, result.intervention.state)
+        assertEquals(InterventionState.ELIGIBLE, result.intervention.state)
         assertEquals(true, result.blocked)
         assertFalse(result.episode.active)
     }

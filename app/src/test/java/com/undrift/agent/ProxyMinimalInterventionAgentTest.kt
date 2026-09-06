@@ -1,7 +1,7 @@
 package com.undrift.agent
 
 import com.undrift.network.ChatMessage
-import com.undrift.network.ProxyAiClient
+import com.undrift.network.ConduitClient
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import org.junit.Assert.assertEquals
@@ -11,19 +11,19 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class MinFakeProxyAiClient(
+class MinFakeConduitClient(
     private val mockResponse: String? = null,
     private val shouldThrow: Boolean = false
-) : ProxyAiClient() {
+) : ConduitClient() {
     var lastMessages: List<ChatMessage>? = null
 
-    override suspend fun chatCompletion(messages: List<ChatMessage>, model: String?, temperature: Double?): String {
+    override suspend fun chatCompletion(messages: List<ChatMessage>, model: String?, temperature: Double, maxTokens: Int?): String {
         lastMessages = messages
         if (shouldThrow) throw Exception("Simulated network failure")
         return mockResponse ?: "{}"
     }
 
-    override fun chatCompletionStream(messages: List<ChatMessage>, model: String?, temperature: Double?): Flow<String> {
+    override fun chatCompletionStream(messages: List<ChatMessage>, model: String?, temperature: Double, maxTokens: Int?): Flow<String> {
         return emptyFlow()
     }
 }
@@ -69,7 +69,7 @@ class ProxyMinimalInterventionAgentTest {
         """.trimIndent()
 
         val agent = ProxyMinimalInterventionAgent(
-            client = MinFakeProxyAiClient(json),
+            client = MinFakeConduitClient(json),
             fallback = LocalMinimalInterventionAgent()
         )
 
@@ -96,7 +96,7 @@ class ProxyMinimalInterventionAgentTest {
         """.trimIndent()
 
         val agent = ProxyMinimalInterventionAgent(
-            client = MinFakeProxyAiClient(json),
+            client = MinFakeConduitClient(json),
             fallback = LocalMinimalInterventionAgent()
         )
 
@@ -121,7 +121,7 @@ class ProxyMinimalInterventionAgentTest {
         """.trimIndent()
 
         val agent = ProxyMinimalInterventionAgent(
-            client = MinFakeProxyAiClient(json),
+            client = MinFakeConduitClient(json),
             fallback = LocalMinimalInterventionAgent()
         )
 
@@ -146,7 +146,7 @@ class ProxyMinimalInterventionAgentTest {
         """.trimIndent()
 
         val agent = ProxyMinimalInterventionAgent(
-            client = MinFakeProxyAiClient(json),
+            client = MinFakeConduitClient(json),
             fallback = LocalMinimalInterventionAgent()
         )
 
@@ -160,7 +160,7 @@ class ProxyMinimalInterventionAgentTest {
     @Test
     fun testFallbackOnNetworkFailure() {
         val agent = ProxyMinimalInterventionAgent(
-            client = MinFakeProxyAiClient(shouldThrow = true),
+            client = MinFakeConduitClient(shouldThrow = true),
             fallback = LocalMinimalInterventionAgent()
         )
 
@@ -173,7 +173,7 @@ class ProxyMinimalInterventionAgentTest {
     @Test
     fun testFallbackOnMalformedJson() {
         val agent = ProxyMinimalInterventionAgent(
-            client = MinFakeProxyAiClient("Invalid non-json response"),
+            client = MinFakeConduitClient("Invalid non-json response"),
             fallback = LocalMinimalInterventionAgent()
         )
 

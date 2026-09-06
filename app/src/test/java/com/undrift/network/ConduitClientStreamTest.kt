@@ -4,11 +4,11 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class ProxyAiClientStreamTest {
+class ConduitClientStreamTest {
 
     @Test
     fun testChatCompletionStream() = runBlocking {
-        val client = ProxyAiClient()
+        val client = ConduitClient()
 
         val messages = listOf(
             ChatMessage(role = "user", content = "Write a very short sentence about the sky.")
@@ -30,8 +30,8 @@ class ProxyAiClientStreamTest {
 
             assertTrue("Expected at least one chunk to be received", chunkCount > 0)
             assertTrue("Expected the full message to not be empty", fullMessage.isNotBlank())
-        } catch (e: ProxyAiException) {
-            println("Caught ProxyAiException: ${e.message}")
+        } catch (e: ConduitException) {
+            println("Caught ConduitException: ${e.message}")
             if (e.message?.contains("403") == true) {
                 println("API Key missing or invalid. The test technically proves the Kotlin setup compiles and runs, but the server blocked the request.")
             } else {

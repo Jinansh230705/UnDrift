@@ -19,7 +19,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.undrift.network.ChatMessage
-import com.undrift.network.ProxyAiClient
+import com.undrift.network.ConduitClient
 import com.undrift.ui.theme.BrandPrimary
 import com.undrift.ui.theme.DarkBackground
 import com.undrift.ui.theme.SurfaceVariantColor
@@ -38,7 +38,7 @@ fun AiChatScreen(
     sharedTransitionScope: SharedTransitionScope
 ) {
     val scope = rememberCoroutineScope()
-    val aiClient = remember { ProxyAiClient() }
+    val aiClient = remember { ConduitClient() }
     
     var messages by remember { 
         mutableStateOf(

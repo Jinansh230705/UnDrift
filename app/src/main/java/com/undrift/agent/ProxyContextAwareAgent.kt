@@ -2,17 +2,17 @@ package com.undrift.agent
 
 import android.util.Log
 import com.undrift.network.ChatMessage
-import com.undrift.network.ProxyAiClient
+import com.undrift.network.ConduitClient
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.json.JSONArray
 
 /**
- * Uses [ProxyAiClient] to assess user context via the Cloudflare AI Proxy,
+ * Uses [ConduitClient] to assess user context via the Cloudflare AI Proxy,
  * falling back to [LocalContextAwareAgent] when offline or on error.
  */
 class ProxyContextAwareAgent(
-    private val client: ProxyAiClient = ProxyAiClient(),
+    private val client: ConduitClient = ConduitClient(),
     private val fallback: ContextAwareAgent = LocalContextAwareAgent.instance
 ) : ContextAwareAgent {
 

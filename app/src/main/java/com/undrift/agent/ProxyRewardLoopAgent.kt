@@ -2,17 +2,17 @@ package com.undrift.agent
 
 import android.util.Log
 import com.undrift.network.ChatMessage
-import com.undrift.network.ProxyAiClient
+import com.undrift.network.ConduitClient
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 
 /**
- * Uses [ProxyAiClient] for AI-generated reward evaluations via Cloudflare AI Proxy,
+ * Uses [ConduitClient] for AI-generated reward evaluations via Cloudflare AI Proxy,
  * while keeping reward decisions safe and available offline through [fallback].
  * All evaluations are logged to [RewardRepository] for UI state reactivity.
  */
 class ProxyRewardLoopAgent(
-    private val client: ProxyAiClient = ProxyAiClient(),
+    private val client: ConduitClient = ConduitClient(),
     private val fallback: LocalRewardLoopAgent = LocalRewardLoopAgent.instance,
     private val repository: RewardRepository = RewardRepository.instance
 ) : RewardLoopAgent {

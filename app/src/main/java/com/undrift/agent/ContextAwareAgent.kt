@@ -88,11 +88,11 @@ class LocalContextAwareAgent : ContextAwareAgent {
             blocked = input.isBlocked,
             episode = EpisodeInfo(false, null, 0),
             intervention = InterventionInfo(
-                state = InterventionState.NOT_ELIGIBLE,
+                state = if (input.isBlocked) InterventionState.ELIGIBLE else InterventionState.NOT_ELIGIBLE,
                 thresholdSeconds = 0,
                 elapsedSeconds = 0,
                 remainingSeconds = 0,
-                reason = "Fallback safe mode; proxy analysis unavailable."
+                reason = if (input.isBlocked) "Offline block fallback." else "Fallback safe mode; proxy analysis unavailable."
             ),
             transition = null,
             evidence = listOf("Local fallback used.")

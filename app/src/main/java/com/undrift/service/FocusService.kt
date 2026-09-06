@@ -28,20 +28,20 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import java.util.*
 import com.undrift.agent.*
-import com.undrift.network.ProxyAiClient
+import com.undrift.network.ConduitClient
 
 class FocusService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private lateinit var userPreferences: UserPreferences
     private val mongoRepository = MongoRepository()
     private val rewardAgent: RewardLoopAgent by lazy {
-        ProxyRewardLoopAgent(ProxyAiClient(), LocalRewardLoopAgent.instance)
+        ProxyRewardLoopAgent(ConduitClient(), LocalRewardLoopAgent.instance)
     }
     private val contextAgent: ContextAwareAgent by lazy {
-        ProxyContextAwareAgent(ProxyAiClient(), LocalContextAwareAgent.instance)
+        ProxyContextAwareAgent(ConduitClient(), LocalContextAwareAgent.instance)
     }
     private val interventionAgent: MinimalInterventionAgent by lazy {
-        ProxyMinimalInterventionAgent(ProxyAiClient(), LocalMinimalInterventionAgent.instance)
+        ProxyMinimalInterventionAgent(ConduitClient(), LocalMinimalInterventionAgent.instance)
     }
     
     // Agent Polling State Tracking
@@ -377,7 +377,7 @@ class FocusService : Service() {
         val isLimitExceeded = limit > 0 && currentForegroundUsageToday >= limit
 
         // Only engage agents if the app is a potential distraction (blocked or limit exceeded)
-        if ((isFocusModeActive && isBlocked) || isLimitExceeded) {
+        if (isBlocked || isLimitExceeded) {
             val now = System.currentTimeMillis()
             
             // Should we poll the agent?

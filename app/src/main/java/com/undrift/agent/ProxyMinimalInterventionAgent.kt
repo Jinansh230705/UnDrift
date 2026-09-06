@@ -2,18 +2,18 @@ package com.undrift.agent
 
 import android.util.Log
 import com.undrift.network.ChatMessage
-import com.undrift.network.ProxyAiClient
+import com.undrift.network.ConduitClient
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Uses [ProxyAiClient] to decide on interventions via the Cloudflare AI Proxy,
+ * Uses [ConduitClient] to decide on interventions via the Cloudflare AI Proxy,
  * falling back to [LocalMinimalInterventionAgent] when offline or on error.
  * Fully follows the Undrift Minimal-Intervention Agent specification.
  */
 class ProxyMinimalInterventionAgent(
-    private val client: ProxyAiClient = ProxyAiClient(),
+    private val client: ConduitClient = ConduitClient(),
     private val fallback: MinimalInterventionAgent = LocalMinimalInterventionAgent.instance
 ) : MinimalInterventionAgent {
 

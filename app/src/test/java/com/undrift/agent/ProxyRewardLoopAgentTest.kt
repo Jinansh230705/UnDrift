@@ -5,20 +5,21 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Test
 import java.util.UUID
-import com.undrift.network.ProxyAiClient
+import com.undrift.network.ConduitClient
 import com.undrift.network.ChatMessage
 
 class ProxyRewardLoopAgentTest {
 
     @Test
     fun testProxyRewardLoopAgent_Execution() = runBlocking {
-        // Creating the ProxyRewardLoopAgent which internally instantiates a FakeProxyAiClient to simulate failure.
+        // Creating the ProxyRewardLoopAgent which internally instantiates a FakeConduitClient to simulate failure.
         val agent = ProxyRewardLoopAgent(
-            client = object : ProxyAiClient() {
+            client = object : ConduitClient() {
                 override suspend fun chatCompletion(
                     messages: List<ChatMessage>,
                     model: String?,
-                    temperature: Double?
+                    temperature: Double,
+                    maxTokens: Int?
                 ): String {
                     throw RuntimeException("Simulated network failure")
                 }
@@ -32,7 +33,7 @@ class ProxyRewardLoopAgentTest {
             actualFocusDurationMinutes = 25
         )
 
-        // Calling evaluate will attempt to use the ProxyAiClient to reach the Cloudflare API.
+        // Calling evaluate will attempt to use the ConduitClient to reach the Cloudflare API.
         // In this local unit test environment (missing API keys and Android JSONObject mocks), 
         // the network call will fail.
         // The ProxyRewardLoopAgent should gracefully catch this and fallback to LocalRewardLoopAgent.
