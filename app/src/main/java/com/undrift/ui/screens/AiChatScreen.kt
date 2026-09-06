@@ -116,8 +116,14 @@ fun AiChatScreen(
                             
                             scope.launch {
                                 try {
-                                    val response = aiClient.chatCompletion(messages)
-                                    messages = messages + ChatMessage("assistant", response)
+                                    messages = messages + ChatMessage("assistant", "")
+                                    aiClient.chatCompletionStream(messages.dropLast(1)).collect { chunk ->
+                                        val currentList = messages.toMutableList()
+                                        val lastIdx = currentList.lastIndex
+                                        val currentMsg = currentList[lastIdx]
+                                        currentList[lastIdx] = currentMsg.copy(content = currentMsg.content + chunk)
+                                        messages = currentList
+                                    }
                                 } catch (e: Exception) {
                                     val err = e.message ?: e.toString()
                                     val regex = Regex("Please retry in [0-9.]+s")
