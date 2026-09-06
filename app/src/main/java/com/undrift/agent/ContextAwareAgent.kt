@@ -56,7 +56,9 @@ data class ContextAssessmentInput(
     val timeSinceLastIntervention: Long? = null,
     val configuredNudgeDelay: Long? = null,
     val isBreakState: Boolean = false,
-    val isTyping: Boolean = false
+    val isTyping: Boolean = false,
+    val isDoomScrolling: Boolean = false,
+    val isIdle: Boolean = false
 )
 
 data class ContextAssessmentOutput(
@@ -78,7 +80,73 @@ interface ContextAwareAgent {
 
 class LocalContextAwareAgent : ContextAwareAgent {
     override fun assessContext(input: ContextAssessmentInput): ContextAssessmentOutput {
-        // A very safe, conservative fallback that fails closed (never nudging by default)
+        // Rule 1: Actively typing => strictly SUPPRESS intervention
+        if (input.isTyping) {
+            return ContextAssessmentOutput(
+                context = UserContext.WORK,
+                contextConfidence = 0.9,
+                currentActivity = input.packageName,
+                activityCompatibility = ActivityCompatibility.CONSISTENT,
+                distractionConfidence = 0.0,
+                blocked = input.isBlocked,
+                episode = EpisodeInfo(true, input.sessionStartTime, (input.timeSpentMillis / 1000)),
+                intervention = InterventionInfo(
+                    state = InterventionState.SUPPRESSED,
+                    thresholdSeconds = 0,
+                    elapsedSeconds = (input.timeSpentMillis / 1000),
+                    remainingSeconds = 0,
+                    reason = "User is actively typing or engaged in an important task; intervention suppressed."
+                ),
+                transition = null,
+                evidence = listOf("Active typing detected", "Intervention suppressed for user workflow")
+            )
+        }
+
+        // Rule 2: Doom scrolling in restricted / focus context => ELIGIBLE
+        if (input.isDoomScrolling && (input.isBlocked || input.isFocusModeActive)) {
+            return ContextAssessmentOutput(
+                context = UserContext.CASUAL,
+                contextConfidence = 0.95,
+                currentActivity = input.packageName,
+                activityCompatibility = ActivityCompatibility.INCONSISTENT,
+                distractionConfidence = 0.95,
+                blocked = input.isBlocked,
+                episode = EpisodeInfo(true, input.sessionStartTime, (input.timeSpentMillis / 1000)),
+                intervention = InterventionInfo(
+                    state = InterventionState.ELIGIBLE,
+                    thresholdSeconds = 0,
+                    elapsedSeconds = (input.timeSpentMillis / 1000),
+                    remainingSeconds = 0,
+                    reason = "Rapid doom scrolling detected in restricted application."
+                ),
+                transition = null,
+                evidence = listOf("Rapid scroll events without text input", "Doom scrolling behavior")
+            )
+        }
+
+        // Rule 3: Idle in restricted / focus context => ELIGIBLE
+        if (input.isIdle && (input.isBlocked || input.isFocusModeActive)) {
+            return ContextAssessmentOutput(
+                context = UserContext.IDLE,
+                contextConfidence = 0.85,
+                currentActivity = input.packageName,
+                activityCompatibility = ActivityCompatibility.INCONSISTENT,
+                distractionConfidence = 0.85,
+                blocked = input.isBlocked,
+                episode = EpisodeInfo(true, input.sessionStartTime, (input.timeSpentMillis / 1000)),
+                intervention = InterventionInfo(
+                    state = InterventionState.ELIGIBLE,
+                    thresholdSeconds = 0,
+                    elapsedSeconds = (input.timeSpentMillis / 1000),
+                    remainingSeconds = 0,
+                    reason = "User is idle in restricted application."
+                ),
+                transition = null,
+                evidence = listOf("User idle without interaction", "Restricted app feed idle")
+            )
+        }
+
+        // Rule 4: Blocked application default fallback (safe offline fallback)
         return ContextAssessmentOutput(
             context = UserContext.UNKNOWN,
             contextConfidence = 0.0,

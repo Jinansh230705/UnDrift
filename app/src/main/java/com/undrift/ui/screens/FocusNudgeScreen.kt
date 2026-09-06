@@ -36,8 +36,9 @@ import com.undrift.ui.components.premiumCard
 fun FocusNudgeScreen(
     packageName: String?,
     reason: String?,
+    message: String? = null,
     onBackToFocus: () -> Unit,
-    onNeedTime: () -> Unit,
+    onUnlockWithPoints: () -> Unit,
     animatedVisibilityScope: AnimatedVisibilityScope,
     sharedTransitionScope: SharedTransitionScope
 ) {
@@ -148,7 +149,7 @@ fun FocusNudgeScreen(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = if (reason == "LIMIT_EXCEEDED") 
+                    text = message ?: if (reason == "LIMIT_EXCEEDED") 
                         "You've reached your daily limit for $appName. Stay focused on your goals instead."
                         else "This app is currently blocked because you're in Deep Work mode.",
                     style = MaterialTheme.typography.bodyMedium,
@@ -176,7 +177,7 @@ fun FocusNudgeScreen(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 OutlinedButton(
-                    onClick = onNeedTime,
+                    onClick = onUnlockWithPoints,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
@@ -187,7 +188,7 @@ fun FocusNudgeScreen(
                         containerColor = SurfaceVariantColor
                     )
                 ) {
-                    Text("Unlock with 50 Points", fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                    Text("Continue for 20 mins (50 Points)", fontSize = 16.sp, fontWeight = FontWeight.Medium)
                 }
 
                 Spacer(modifier = Modifier.height(28.dp))

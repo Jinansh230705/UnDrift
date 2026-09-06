@@ -82,16 +82,22 @@ class FocusService : Service() {
 
     // Temporary app allowances (package -> expiry millis)
     private val tempAllowedApps = mutableMapOf<String, Long>()
+    private val tempPrefs by lazy { getSharedPreferences("temp_allowed_apps", Context.MODE_PRIVATE) }
     
     // Time when the user last clicked "Back to Focus"
     private var lastHomeActionTime = 0L
 
     companion object {
         private const val TAG = "FocusService"
+
+        @Volatile
+        var instance: FocusService? = null
+            private set
     }
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         userPreferences = UserPreferences(this)
         createNotificationChannel()
         val notification = createNotification("UnDrift Active", "Monitoring app usage")
@@ -202,6 +208,18 @@ class FocusService : Service() {
                 startFocusMode(durationSeconds)
             }
             "STOP_FOCUS" -> stopFocusMode(breakStreak = true)
+            "GRANT_TEMP_ACCESS" -> {
+                val pkg = intent.getStringExtra("PACKAGE")
+                val mins = intent.getIntExtra("DURATION_MINUTES", 20)
+                if (!pkg.isNullOrEmpty()) {
+                    grantTempAccess(pkg, mins)
+                }
+            }
+            "REWARD_RECOVERY" -> {
+                serviceScope.launch {
+                    rewardDistractionRecovery()
+                }
+            }
         }
         return START_STICKY
     }
@@ -353,11 +371,17 @@ class FocusService : Service() {
         val foregroundPkg = getForegroundPackage()
         if (foregroundPkg == null || foregroundPkg == packageName) return
 
-        // Check temp allowance
-        val tempExpiry = tempAllowedApps[foregroundPkg]
+        // Check temp allowance (memory cache + persistent storage)
+        val nowMs = System.currentTimeMillis()
+        val tempExpiry = tempAllowedApps[foregroundPkg] ?: tempPrefs.getLong(foregroundPkg, 0L).takeIf { it > 0 }
         if (tempExpiry != null) {
-            if (System.currentTimeMillis() < tempExpiry) return
-            else tempAllowedApps.remove(foregroundPkg)
+            if (nowMs < tempExpiry) {
+                tempAllowedApps[foregroundPkg] = tempExpiry
+                return
+            } else {
+                tempAllowedApps.remove(foregroundPkg)
+                tempPrefs.edit().remove(foregroundPkg).apply()
+            }
         }
 
         val profile = currentUserProfile ?: return
@@ -375,6 +399,15 @@ class FocusService : Service() {
             }
         }
         val isLimitExceeded = limit > 0 && currentForegroundUsageToday >= limit
+
+        val isTyping = ContextAwareAgentService.isUserTyping()
+        val isDoomScrolling = ContextAwareAgentService.isUserDoomScrolling()
+        val isIdle = ContextAwareAgentService.isUserIdle()
+
+        // Core Rule: Never block or interrupt if the user is actively typing or on an important task
+        if (isTyping) {
+            return
+        }
 
         // Only engage agents if the app is a potential distraction (blocked or limit exceeded)
         if (isBlocked || isLimitExceeded) {
@@ -395,7 +428,9 @@ class FocusService : Service() {
                     focusSessionPlannedDuration = if (isFocusModeActive) (focusEndTime - focusStartTime) / 60_000 else null,
                     focusSessionStartTime = if (isFocusModeActive) focusStartTime else null,
                     timeSpentMillis = currentForegroundUsageToday,
-                    isTyping = ContextAwareAgentService.currentContext.value == com.undrift.service.UserContext.IMPORTANT_TASK
+                    isTyping = isTyping,
+                    isDoomScrolling = isDoomScrolling,
+                    isIdle = isIdle
                 )
                 
                 val contextAssessment = contextAgent.assessContext(input)
@@ -410,35 +445,57 @@ class FocusService : Service() {
                     recentInterventionsCount = recentInterventionsCount,
                     previousInterventionResponse = previousInterventionResponse
                 )
-                val interventionDecision = interventionAgent.decideIntervention(interventionInput)
+                // Conserve 5 RPM API budget: If context assessment already suppressed or not eligible, do not make second API call
+                val interventionDecision = if (contextAssessment.intervention.state == InterventionState.SUPPRESSED ||
+                                               contextAssessment.intervention.state == InterventionState.NOT_ELIGIBLE) {
+                    InterventionDecisionOutput(
+                        shouldIntervene = false,
+                        level = InterventionLevel.NONE,
+                        message = null,
+                        reason = contextAssessment.intervention.reason,
+                        confidence = contextAssessment.contextConfidence,
+                        cooldownMinutes = 0
+                    )
+                } else {
+                    val interventionInput = InterventionDecisionInput(
+                        packageName = foregroundPkg,
+                        contextAssessment = contextAssessment,
+                        isFocusModeActive = isFocusModeActive,
+                        timeSpentMillis = currentForegroundUsageToday,
+                        timeLimitMillis = if (limit > 0) limit else null,
+                        lastInterventionTimestamp = lastInterventionTimestamp,
+                        recentInterventionsCount = recentInterventionsCount,
+                        previousInterventionResponse = previousInterventionResponse
+                    )
+                    interventionAgent.decideIntervention(interventionInput)
+                }
                 
                 lastInterventionLevel = interventionDecision.level
                 lastInterventionMessage = interventionDecision.message ?: interventionDecision.reason
                 
-                // Throttle next poll based on AI decision & recommended cooldown
+                // Throttle next poll based on AI decision & recommended cooldown (safeguarding 5 RPM)
                 if (interventionDecision.cooldownMinutes > 0) {
                     nextAgentPollTime = now + (interventionDecision.cooldownMinutes * 60_000L)
                 } else if (contextAssessment.intervention.state == InterventionState.WAITING) {
-                    val waitMs = (contextAssessment.intervention.remainingSeconds * 1000).coerceIn(5000, 30000)
+                    val waitMs = (contextAssessment.intervention.remainingSeconds * 1000).coerceIn(10000, 30000)
                     nextAgentPollTime = now + waitMs
                 } else {
-                    nextAgentPollTime = now + 10000 // default throttle 10s if not waiting
+                    nextAgentPollTime = now + 25000 // default throttle 25s to stay well under 5 RPM
                 }
-            }
-            
-            // Apply the last known intervention decision for this package
-            if (foregroundPkg == lastAgentPackage) {
-                if (lastInterventionLevel != null && lastInterventionLevel != InterventionLevel.NONE) {
+
+                // If intervention is warranted, trigger once now
+                if (interventionDecision.shouldIntervene && interventionDecision.level != InterventionLevel.NONE) {
                     lastInterventionTimestamp = now
                     recentInterventionsCount++
                     val reason = if (isLimitExceeded) "LIMIT_EXCEEDED" else "FOCUS_INTERVENTION"
                     val message = lastInterventionMessage ?: "Ready to return to your focus session?"
                     
-                    if (lastInterventionLevel == InterventionLevel.AWARENESS) {
+                    if (interventionDecision.level == InterventionLevel.AWARENESS) {
                         showAwarenessNotification(foregroundPkg, message)
                     } else {
                         showOverlay(foregroundPkg, reason, profile.points, message)
                     }
+                    lastInterventionLevel = null
                 }
             }
         } else {
@@ -469,8 +526,24 @@ class FocusService : Service() {
 
     private fun showOverlay(blockedPkg: String, reason: String, userPoints: Int = 0, dynamicMessage: String? = null) {
         if (!Settings.canDrawOverlays(this)) {
-            Log.e(TAG, "No SYSTEM_ALERT_WINDOW permission – falling back to notification")
-            showFallbackNotification(blockedPkg, reason)
+            Log.e(TAG, "No SYSTEM_ALERT_WINDOW permission – falling back to notification / accessibility launch")
+            showFallbackNotification(blockedPkg, reason, dynamicMessage)
+            
+            // Accessibility services have permission to launch activities from background
+            ContextAwareAgentService.instance?.let { service ->
+                try {
+                    val intent = Intent(service, MainActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                        putExtra("SCREEN", "nudge")
+                        putExtra("PACKAGE", blockedPkg)
+                        putExtra("REASON", reason)
+                        putExtra("MESSAGE", dynamicMessage)
+                    }
+                    service.startActivity(intent)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Accessibility launch failed: ${e.message}")
+                }
+            }
             return
         }
 
@@ -524,8 +597,11 @@ class FocusService : Service() {
         }
     }
 
-    private fun grantTempAccess(packageName: String, durationMinutes: Int) {
-        tempAllowedApps[packageName] = System.currentTimeMillis() + (durationMinutes * 60 * 1000L)
+    fun grantTempAccess(packageName: String, durationMinutes: Int) {
+        val expiry = System.currentTimeMillis() + (durationMinutes * 60 * 1000L)
+        tempAllowedApps[packageName] = expiry
+        tempPrefs.edit().putLong(packageName, expiry).apply()
+        nextAgentPollTime = expiry
         dismissOverlay()
     }
 
@@ -603,6 +679,10 @@ class FocusService : Service() {
                 previousInterventionResponse = "returned_to_focus"
                 lastHomeActionTime = System.currentTimeMillis()
                 dismissOverlay()
+                
+                // Close the behavioral loop (reward-agent.md): User recovered from distraction!
+                rewardDistractionRecovery()
+
                 try {
                     val homeIntent = Intent(Intent.ACTION_MAIN).apply {
                         addCategory(Intent.CATEGORY_HOME)
@@ -616,6 +696,41 @@ class FocusService : Service() {
         }
         sheet.addView(backBtn)
 
+        // Option to continue by spending points for limited time (e.g. 20 minutes for 50 points)
+        val unlockWithPointsBtn = Button(ctx).apply {
+            text = "Continue for 20 mins (50 pts)"
+            textSize = 15f
+            isAllCaps = false
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(0xFFFFFFFF.toInt())
+            val bg = GradientDrawable().apply {
+                setColor(0xFF2C2C2E.toInt())
+                setStroke(dp(1), accentColor)
+                cornerRadius = dpf(28f)
+            }
+            background = bg
+            setPadding(dp(24), dp(14), dp(24), dp(14))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(54)
+            ).apply { bottomMargin = dp(16) }
+            setOnClickListener {
+                val currentPoints = currentUserProfile?.points ?: 0
+                if (currentPoints >= 50) {
+                    serviceScope.launch {
+                        userPreferences.updatePoints(-50)
+                        currentUserProfile?.let { prof ->
+                            mongoRepository.updateUserStats(prof.email, prof.points - 50, prof.streakCount, prof.streakHistory)
+                        }
+                    }
+                    grantTempAccess(blockedPkg, 20)
+                    Toast.makeText(ctx, "Unlocked $appName for 20 minutes (-50 pts)", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(ctx, "Need 50 points (Current: $currentPoints pts)", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        sheet.addView(unlockWithPointsBtn)
+
         val dismissBtn = TextView(ctx).apply {
             text = "I want to continue"
             textSize = 14f
@@ -627,6 +742,8 @@ class FocusService : Service() {
             )
             setOnClickListener {
                 previousInterventionResponse = "dismissed"
+                // 5 minutes cooldown on dismissal so overlay does not spam user
+                nextAgentPollTime = System.currentTimeMillis() + 300_000L
                 dismissOverlay()
             }
         }
@@ -679,7 +796,7 @@ class FocusService : Service() {
         nm.notify(pkgName.hashCode() + 100, notification)
     }
 
-    private fun showFallbackNotification(blockedPkg: String, reason: String) {
+    private fun showFallbackNotification(blockedPkg: String, reason: String, dynamicMessage: String? = null) {
         val now = System.currentTimeMillis()
         val key = blockedPkg + "_fallback"
         val last = notificationTimestamps[key] ?: 0L
@@ -691,12 +808,13 @@ class FocusService : Service() {
             putExtra("SCREEN", "nudge")
             putExtra("PACKAGE", blockedPkg)
             putExtra("REASON", reason)
+            putExtra("MESSAGE", dynamicMessage)
         }
         val pi = PendingIntent.getActivity(this, blockedPkg.hashCode(), intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
 
         val title = if (reason == "LIMIT_EXCEEDED") "Time's Up" else "Focus Alert"
-        val text = if (reason == "LIMIT_EXCEEDED") "You've reached your limit. Tap to block."
+        val text = dynamicMessage ?: if (reason == "LIMIT_EXCEEDED") "You've reached your limit. Tap to block."
                    else "This app is blocked. Tap to go back."
 
         try {
@@ -787,7 +905,28 @@ class FocusService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    fun rewardDistractionRecovery() {
+        serviceScope.launch {
+            val rewardInput = RewardEventInput(
+                eventId = UUID.randomUUID().toString(),
+                event = "DISTRACTION_RECOVERED",
+                successfulRecoveries = 1,
+                actualFocusDurationMinutes = if (isFocusModeActive) ((System.currentTimeMillis() - focusStartTime) / 60_000).toInt().coerceAtLeast(1) else null
+            )
+            val rewardOutput = rewardAgent.evaluate(rewardInput)
+            if (rewardOutput.type == RewardType.RECOVERY) {
+                val recoveryPoints = 25
+                userPreferences.updatePoints(recoveryPoints)
+                val profile = currentUserProfile ?: userPreferences.userProfileFlow.first()
+                val newPoints = profile.points + recoveryPoints
+                mongoRepository.updateUserStats(profile.email, newPoints, profile.streakCount, profile.streakHistory)
+                showRewardNotification(recoveryPoints, rewardOutput.message ?: "Nice recovery. You got back to your task.")
+            }
+        }
+    }
+
     override fun onDestroy() {
+        if (instance == this) instance = null
         unregisterReceiver(screenStateReceiver)
         dismissOverlay()
         serviceScope.cancel()

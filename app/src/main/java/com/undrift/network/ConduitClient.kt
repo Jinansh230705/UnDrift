@@ -60,6 +60,58 @@ data class ChatStreamChunk(
     val choices: List<ChatChoice>,
 )
 
+object ConduitRateLimiter {
+    private const val MAX_REQUESTS_PER_MINUTE = 5
+    private const val WINDOW_MILLIS = 60_000L
+    private val requestTimestamps = java.util.ArrayDeque<Long>()
+    private val lock = Any()
+
+    @Volatile
+    private var backoffUntil = 0L
+
+    fun tryAcquire(): Boolean {
+        synchronized(lock) {
+            val now = System.currentTimeMillis()
+            if (now < backoffUntil) {
+                return false
+            }
+
+            // Prune timestamps outside the 60-second window
+            while (requestTimestamps.isNotEmpty() && (now - (requestTimestamps.peekFirst() ?: now)) >= WINDOW_MILLIS) {
+                requestTimestamps.pollFirst()
+            }
+
+            if (requestTimestamps.size < MAX_REQUESTS_PER_MINUTE) {
+                requestTimestamps.addLast(now)
+                return true
+            }
+            return false
+        }
+    }
+
+    fun recordRateLimitPenalty(retryAfterSeconds: Long = 60L) {
+        synchronized(lock) {
+            val now = System.currentTimeMillis()
+            backoffUntil = now + (retryAfterSeconds * 1000L)
+            requestTimestamps.clear()
+            for (i in 0 until MAX_REQUESTS_PER_MINUTE) {
+                requestTimestamps.addLast(backoffUntil)
+            }
+        }
+    }
+
+    fun getRemainingRequests(): Int {
+        synchronized(lock) {
+            val now = System.currentTimeMillis()
+            if (now < backoffUntil) return 0
+            while (requestTimestamps.isNotEmpty() && (now - (requestTimestamps.peekFirst() ?: now)) >= WINDOW_MILLIS) {
+                requestTimestamps.pollFirst()
+            }
+            return (MAX_REQUESTS_PER_MINUTE - requestTimestamps.size).coerceAtLeast(0)
+        }
+    }
+}
+
 open class ConduitClient(
     private val baseUrl: String = BuildConfig.PROXY_BASE_URL,
     private val proxyApiKey: String? = null, // Can be null now
@@ -83,6 +135,11 @@ open class ConduitClient(
         temperature: Double = 0.7,
         maxTokens: Int? = null,
     ): String {
+        // Enforce 5 RPM rate limit before initiating network call
+        if (!ConduitRateLimiter.tryAcquire()) {
+            throw ConduitRateLimitException("Conduit 5 RPM rate limit active. Falling back to local offline rules.")
+        }
+
         val reqBody = ChatRequest(
             model = model,
             messages = messages,
@@ -99,6 +156,10 @@ open class ConduitClient(
 
         http.newCall(request).execute().use { resp ->
             val raw = resp.body?.string() ?: ""
+            if (resp.code == 429) {
+                ConduitRateLimiter.recordRateLimitPenalty(60)
+                throw ConduitRateLimitException("Received HTTP 429 Too Many Requests from proxy: $raw")
+            }
             if (!resp.isSuccessful) {
                 throw ConduitException("Proxy error ${resp.code}: $raw")
             }
@@ -113,6 +174,10 @@ open class ConduitClient(
         temperature: Double = 0.7,
         maxTokens: Int? = null,
     ): Flow<String> = flow {
+        if (!ConduitRateLimiter.tryAcquire()) {
+            throw ConduitRateLimitException("Conduit 5 RPM rate limit active. Please wait a moment.")
+        }
+
         val reqBody = ChatRequest(
             model = model,
             messages = messages,
@@ -129,6 +194,10 @@ open class ConduitClient(
             .build()
 
         http.newCall(request).execute().use { resp ->
+            if (resp.code == 429) {
+                ConduitRateLimiter.recordRateLimitPenalty(60)
+                throw ConduitRateLimitException("Received HTTP 429 Too Many Requests from proxy")
+            }
             if (!resp.isSuccessful) {
                 val err = resp.body?.string() ?: ""
                 throw ConduitException("Proxy error ${resp.code}: $err")
@@ -160,4 +229,5 @@ open class ConduitClient(
     }
 }
 
-class ConduitException(message: String) : Exception(message)
+open class ConduitException(message: String) : Exception(message)
+class ConduitRateLimitException(message: String) : ConduitException(message)

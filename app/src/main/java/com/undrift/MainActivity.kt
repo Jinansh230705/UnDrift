@@ -302,24 +302,56 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                             composable(
-                                route = "nudge?package={package}&reason={reason}",
+                                route = "nudge?package={package}&reason={reason}&message={message}",
                                 arguments = listOf(
                                     navArgument("package") { type = NavType.StringType; nullable = true },
-                                    navArgument("reason") { type = NavType.StringType; nullable = true }
+                                    navArgument("reason") { type = NavType.StringType; nullable = true },
+                                    navArgument("message") { type = NavType.StringType; nullable = true }
                                 )
                             ) { backStackEntry ->
                                 val pkg = backStackEntry.arguments?.getString("package")
                                 val reason = backStackEntry.arguments?.getString("reason")
+                                val message = backStackEntry.arguments?.getString("message")
                                 FocusNudgeScreen(
                                     packageName = pkg,
                                     reason = reason,
+                                    message = message,
                                     onBackToFocus = { 
-                                        val startMain = Intent(Intent.ACTION_MAIN)
-                                        startMain.addCategory(Intent.CATEGORY_HOME)
-                                        startMain.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                        FocusService.instance?.rewardDistractionRecovery()
+                                        val startMain = Intent(Intent.ACTION_MAIN).apply {
+                                            addCategory(Intent.CATEGORY_HOME)
+                                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                        }
                                         startActivity(startMain)
                                     },
-                                    onNeedTime = { navController.navigate("rewards") },
+                                    onUnlockWithPoints = {
+                                        scope.launch {
+                                            if (userProfile.points >= 50 && !pkg.isNullOrEmpty()) {
+                                                userPreferences.updatePoints(-50)
+                                                mongoRepository.updateUserStats(userProfile.email, userProfile.points - 50, userProfile.streakCount, userProfile.streakHistory)
+                                                FocusService.instance?.grantTempAccess(pkg, 20) ?: run {
+                                                    val tempIntent = Intent(this@MainActivity, FocusService::class.java).apply {
+                                                        action = "GRANT_TEMP_ACCESS"
+                                                        putExtra("PACKAGE", pkg)
+                                                        putExtra("DURATION_MINUTES", 20)
+                                                    }
+                                                    startService(tempIntent)
+                                                }
+                                                android.widget.Toast.makeText(this@MainActivity, "Unlocked for 20 minutes! (-50 points)", android.widget.Toast.LENGTH_LONG).show()
+                                                val launchIntent = packageManager.getLaunchIntentForPackage(pkg)
+                                                if (launchIntent != null) {
+                                                    startActivity(launchIntent)
+                                                } else {
+                                                    navController.navigate("dashboard") {
+                                                        popUpTo(0)
+                                                    }
+                                                }
+                                            } else if (userProfile.points < 50) {
+                                                android.widget.Toast.makeText(this@MainActivity, "Need 50 points (Current: ${userProfile.points} pts)", android.widget.Toast.LENGTH_LONG).show()
+                                                navController.navigate("rewards")
+                                            }
+                                        }
+                                    },
                                     animatedVisibilityScope = this@composable,
                                     sharedTransitionScope = this@SharedTransitionLayout
                                 )
@@ -376,12 +408,13 @@ class MainActivity : ComponentActivity() {
         if (screen == "nudge") {
             val pkg = intent.getStringExtra("PACKAGE") ?: ""
             val reason = intent.getStringExtra("REASON") ?: ""
+            val msg = intent.getStringExtra("MESSAGE") ?: ""
             val forceOverlay = intent.getBooleanExtra("FORCE_OVERLAY", false)
             
             Log.d("MainActivity", "Processing nudge for package: $pkg, forceOverlay: $forceOverlay")
             
-            // Navigate to nudge screen with animations disabled to prevent flickering
-            navController.navigate("nudge?package=$pkg&reason=$reason") {
+            val encodedMsg = java.net.URLEncoder.encode(msg, "UTF-8")
+            navController.navigate("nudge?package=$pkg&reason=$reason&message=$encodedMsg") {
                 // Clear the backstack to prevent overlay bypass
                 popUpTo(navController.graph.findStartDestination().id) { inclusive = false }
                 launchSingleTop = true
@@ -422,6 +455,37 @@ class MainActivity : ComponentActivity() {
                 Log.e("MainActivity", "Failed to launch overlay permission settings", e)
             }
         }
+
+        if (!isAccessibilityServiceEnabled()) {
+            try {
+                val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                startActivity(intent)
+                android.widget.Toast.makeText(
+                    this,
+                    "Please enable UnDrift AI Context Agent in Accessibility Settings for smart context monitoring",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            } catch (e: Throwable) {
+                Log.e("MainActivity", "Failed to launch accessibility settings", e)
+            }
+        }
+    }
+
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        val expectedComponentName = android.content.ComponentName(this, com.undrift.service.ContextAwareAgentService::class.java).flattenToString()
+        val enabledServices = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ) ?: return false
+        val colonSplitter = android.text.TextUtils.SimpleStringSplitter(':')
+        colonSplitter.setString(enabledServices)
+        while (colonSplitter.hasNext()) {
+            val componentName = colonSplitter.next()
+            if (componentName.equals(expectedComponentName, ignoreCase = true)) {
+                return true
+            }
+        }
+        return false
     }
 
     private fun startMonitoringService() {
