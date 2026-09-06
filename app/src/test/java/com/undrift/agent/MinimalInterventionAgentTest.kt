@@ -54,7 +54,7 @@ class MinimalInterventionAgentTest {
         )
         val output = agent.decideIntervention(input)
         assertTrue(output.shouldIntervene)
-        assertEquals(InterventionLevel.STRICT_OVERLAY, output.level)
+        assertEquals(InterventionLevel.RETURN_TO_FOCUS, output.level)
     }
 
     @Test
@@ -69,6 +69,53 @@ class MinimalInterventionAgentTest {
         )
         val output = agent.decideIntervention(input)
         assertFalse(output.shouldIntervene)
-        assertTrue(output.cooldownActive)
+        assertTrue(output.cooldownMinutes > 0)
+    }
+
+    @Test
+    fun testSituationABriefActivityNoIntervention() {
+        val input = InterventionDecisionInput(
+            packageName = "com.instagram.android",
+            contextAssessment = mockContext(InterventionState.ELIGIBLE),
+            isFocusModeActive = true,
+            timeSpentMillis = 15_000L, // 15 seconds
+            lastInterventionTimestamp = 0L
+        )
+        val output = agent.decideIntervention(input)
+        assertFalse(output.shouldIntervene)
+        assertEquals(InterventionLevel.NONE, output.level)
+    }
+
+    @Test
+    fun testBreakContextNoIntervention() {
+        val breakContext = mockContext(InterventionState.ELIGIBLE).copy(context = UserContext.BREAK)
+        val input = InterventionDecisionInput(
+            packageName = "com.instagram.android",
+            contextAssessment = breakContext,
+            isFocusModeActive = false,
+            timeSpentMillis = 600_000L, // 10 mins
+            lastInterventionTimestamp = 0L
+        )
+        val output = agent.decideIntervention(input)
+        assertFalse(output.shouldIntervene)
+        assertEquals(InterventionLevel.NONE, output.level)
+    }
+
+    @Test
+    fun testSituationDRepeatedIgnoredInterventionsIncreasesCooldownAndRemainsConservative() {
+        val input = InterventionDecisionInput(
+            packageName = "com.instagram.android",
+            contextAssessment = mockContext(InterventionState.ELIGIBLE),
+            isFocusModeActive = true,
+            timeSpentMillis = 600_000L,
+            lastInterventionTimestamp = 0L,
+            recentInterventionsCount = 2,
+            previousInterventionResponse = "ignored"
+        )
+        val output = agent.decideIntervention(input)
+        assertTrue(output.shouldIntervene)
+        // Remains conservative (Awareness rather than escalating to level 3)
+        assertEquals(InterventionLevel.AWARENESS, output.level)
+        assertTrue(output.cooldownMinutes >= 20)
     }
 }

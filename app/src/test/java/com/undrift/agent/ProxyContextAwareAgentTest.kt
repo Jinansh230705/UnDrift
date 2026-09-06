@@ -169,6 +169,6 @@ class ProxyContextAwareAgentTest {
         
         val decision = minAgent.decideIntervention(decisionInput)
         assertTrue(decision.shouldIntervene)
-        assertEquals(InterventionLevel.STRICT_OVERLAY, decision.level)
+        assertEquals(InterventionLevel.RETURN_TO_FOCUS, decision.level)
     }
 }

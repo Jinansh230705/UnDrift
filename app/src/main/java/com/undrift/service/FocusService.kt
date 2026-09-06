@@ -50,6 +50,9 @@ class FocusService : Service() {
     private var nextAgentPollTime = 0L
     private var lastInterventionMessage: String? = null
     private var lastInterventionLevel: InterventionLevel? = null
+    private var lastInterventionTimestamp = 0L
+    private var recentInterventionsCount = 0
+    private var previousInterventionResponse: String? = null
     
     private var isFocusModeActive = false
     private var focusEndTime = 0L
@@ -402,15 +405,20 @@ class FocusService : Service() {
                     contextAssessment = contextAssessment,
                     isFocusModeActive = isFocusModeActive,
                     timeSpentMillis = currentForegroundUsageToday,
-                    timeLimitMillis = if (limit > 0) limit else null
+                    timeLimitMillis = if (limit > 0) limit else null,
+                    lastInterventionTimestamp = lastInterventionTimestamp,
+                    recentInterventionsCount = recentInterventionsCount,
+                    previousInterventionResponse = previousInterventionResponse
                 )
                 val interventionDecision = interventionAgent.decideIntervention(interventionInput)
                 
                 lastInterventionLevel = interventionDecision.level
-                lastInterventionMessage = interventionDecision.reason
+                lastInterventionMessage = interventionDecision.message ?: interventionDecision.reason
                 
-                // Throttle next poll based on AI decision
-                if (contextAssessment.intervention.state == InterventionState.WAITING) {
+                // Throttle next poll based on AI decision & recommended cooldown
+                if (interventionDecision.cooldownMinutes > 0) {
+                    nextAgentPollTime = now + (interventionDecision.cooldownMinutes * 60_000L)
+                } else if (contextAssessment.intervention.state == InterventionState.WAITING) {
                     val waitMs = (contextAssessment.intervention.remainingSeconds * 1000).coerceIn(5000, 30000)
                     nextAgentPollTime = now + waitMs
                 } else {
@@ -420,10 +428,17 @@ class FocusService : Service() {
             
             // Apply the last known intervention decision for this package
             if (foregroundPkg == lastAgentPackage) {
-                if (lastInterventionLevel == InterventionLevel.STRICT_OVERLAY || lastInterventionLevel == InterventionLevel.SOFT_NUDGE) {
-                    val reason = if (isLimitExceeded) "LIMIT_EXCEEDED" else "STRICT_BLOCK"
-                    val message = lastInterventionMessage ?: "Stay focused. Keep the momentum?"
-                    showOverlay(foregroundPkg, reason, profile.points, message)
+                if (lastInterventionLevel != null && lastInterventionLevel != InterventionLevel.NONE) {
+                    lastInterventionTimestamp = now
+                    recentInterventionsCount++
+                    val reason = if (isLimitExceeded) "LIMIT_EXCEEDED" else "FOCUS_INTERVENTION"
+                    val message = lastInterventionMessage ?: "Ready to return to your focus session?"
+                    
+                    if (lastInterventionLevel == InterventionLevel.AWARENESS) {
+                        showAwarenessNotification(foregroundPkg, message)
+                    } else {
+                        showOverlay(foregroundPkg, reason, profile.points, message)
+                    }
                 }
             }
         } else {
@@ -585,6 +600,7 @@ class FocusService : Service() {
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(60)
             ).apply { bottomMargin = dp(16) }
             setOnClickListener {
+                previousInterventionResponse = "returned_to_focus"
                 lastHomeActionTime = System.currentTimeMillis()
                 dismissOverlay()
                 try {
@@ -600,11 +616,50 @@ class FocusService : Service() {
         }
         sheet.addView(backBtn)
 
+        val dismissBtn = TextView(ctx).apply {
+            text = "I want to continue"
+            textSize = 14f
+            setTextColor(0xAAFFFFFF.toInt())
+            gravity = Gravity.CENTER
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            setOnClickListener {
+                previousInterventionResponse = "dismissed"
+                dismissOverlay()
+            }
+        }
+        sheet.addView(dismissBtn)
+
         root.addView(sheet)
         return root
     }
 
     // ─── Notifications ───────────────────────────────────────────────────
+
+    private fun showAwarenessNotification(pkgName: String, message: String) {
+        val now = System.currentTimeMillis()
+        val key = pkgName + "_awareness"
+        val last = notificationTimestamps[key] ?: 0L
+        if (now - last < 60_000) return
+        notificationTimestamps[key] = now
+
+        val appName = try {
+            packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkgName, 0)).toString()
+        } catch (_: Exception) { pkgName }
+
+        val notification = NotificationCompat.Builder(this, "focus_channel")
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("Undrift Focus • $appName")
+            .setContentText(message)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .build()
+
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.notify(pkgName.hashCode() + 200, notification)
+    }
 
     private fun showWarningNotification(pkgName: String, secondsLeft: Long) {
         val now = System.currentTimeMillis()
